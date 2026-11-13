@@ -1,0 +1,137 @@
+"""Functional DARUAN / QKAN layer.
+
+DARUAN (DatA Re-Uploading ActivatioN) is the single-qubit data re-uploading
+circuit used as the learnable edge activation in QKAN (Jiang et al.,
+arXiv:2509.14026).  The official implementation (``pip install qkan``) stores
+the circuit angles as ``nn.Parameter`` shared over the batch.  A fast-weight
+programmer needs the angles to be *per-sample tensors* produced by another
+network, so this module re-implements the default ``pz_encoding`` ansatz as a
+pure function of ``(x, theta)``.  ``tests/test_daruan.py`` checks numerical
+equivalence with the official solver.
+
+Circuit (``pz_encoding``), per edge (o, i)::
+
+    |0> - H - [ RZ(th[l,0]) - RY(th[l,1]) - RZ(w[l] * x_i + b[l]) ] * reps
+             - RZ(th[reps,0]) - RY(th[reps,1]) - <Z>
+
+Layer output: ``y_o = sum_i phi_{o,i}(x_i)`` (the ``QKAN`` class defaults:
+post-activation weights fixed to 1 and no base activation).
+"""
+
+from __future__ import annotations
+
+import math
+
+import torch
+from torch import nn
+
+INV_SQRT2 = 1.0 / math.sqrt(2.0)
+
+
+def daruan_pz(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preact_w: torch.Tensor | None = None,
+    preact_b: torch.Tensor | None = None,
+    fast_measure: bool = True,
+) -> torch.Tensor:
+    """Evaluate all edge activations of one QKAN layer.
+
+    Args:
+        x: ``(*batch, in_dim)`` real inputs.
+        theta: ``(out, in, reps + 1, 2)`` shared angles, or
+            ``(*batch, out, in, reps + 1, 2)`` per-sample ("fast") angles.
+        preact_w, preact_b: optional ``(out, in, reps)`` trainable frequency /
+            phase of the data-encoding gate.  ``None`` means ``RZ(x)``.
+        fast_measure: ``True`` -> ``|a| - |b|`` (qkan default, "quantum
+            inspired"); ``False`` -> ``|a|^2 - |b|^2`` (physical <Z>).
+
+    Returns:
+        ``(*batch, out, in)`` activations.
+    """
+    reps = theta.shape[-2] - 1
+    xe = x.unsqueeze(-2)  # (*batch, 1, in)
+
+    # State after the Hadamard, kept as two complex amplitudes.
+    half = 0.5 * theta
+    cos_y = torch.cos(half[..., 1])
+    sin_y = torch.sin(half[..., 1])
+    # RZ(t) = diag(e^{-it/2}, e^{+it/2})
+    ph = torch.polar(torch.ones_like(half[..., 0]), -half[..., 0])
+
+    a = None
+    b = None
+    for layer in range(reps + 1):
+        p = ph[..., layer]
+        c = cos_y[..., layer]
+        s = sin_y[..., layer]
+        if a is None:
+            # RZ then RY applied to (1, 1)/sqrt(2)
+            a0 = p * INV_SQRT2
+            b0 = torch.conj(p) * INV_SQRT2
+        else:
+            a0 = a * p
+            b0 = b * torch.conj(p)
+        a = c * a0 - s * b0
+        b = s * a0 + c * b0
+        if layer < reps:
+            if preact_w is None:
+                enc = xe
+            else:
+                enc = preact_w[..., layer] * xe + preact_b[..., layer]
+            d = torch.polar(torch.ones_like(enc), -0.5 * enc)
+            a = a * d
+            b = b * torch.conj(d)
+    if fast_measure:
+        return a.abs() - b.abs()
+    return a.real**2 + a.imag**2 - b.real**2 - b.imag**2
+
+
+def theta_size(in_dim: int, out_dim: int, reps: int) -> int:
+    return out_dim * in_dim * (reps + 1) * 2
+
+
+class QKANLayer(nn.Module):
+    """Static QKAN layer: ``y_o = sum_i DARUAN_{o,i}(x_i)``."""
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        reps: int = 3,
+        preact_trainable: bool = False,
+        fast_measure: bool = True,
+    ):
+        super().__init__()
+        self.in_dim, self.out_dim, self.reps = in_dim, out_dim, reps
+        self.fast_measure = fast_measure
+        self.theta = nn.Parameter(torch.empty(out_dim, in_dim, reps + 1, 2))
+        nn.init.xavier_normal_(self.theta)  # same default as the qkan package
+        if preact_trainable:
+            self.preact_w = nn.Parameter(torch.ones(out_dim, in_dim, reps))
+            self.preact_b = nn.Parameter(torch.zeros(out_dim, in_dim, reps))
+        else:
+            self.preact_w = None
+            self.preact_b = None
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        act = daruan_pz(x, self.theta, self.preact_w, self.preact_b, self.fast_measure)
+        return act.sum(-1)
+
+
+def fast_qkan_layer(
+    x: torch.Tensor,
+    theta_flat: torch.Tensor,
+    in_dim: int,
+    out_dim: int,
+    reps: int,
+    fast_measure: bool = True,
+) -> torch.Tensor:
+    """QKAN layer whose angles are per-sample fast weights.
+
+    Args:
+        x: ``(*batch, in_dim)``.
+        theta_flat: ``(*batch, out_dim * in_dim * (reps + 1) * 2)``.
+    """
+    theta = theta_flat.reshape(*theta_flat.shape[:-1], out_dim, in_dim, reps + 1, 2)
+    return daruan_pz(x, theta, fast_measure=fast_measure).sum(-1)

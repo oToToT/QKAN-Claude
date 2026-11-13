@@ -1,0 +1,6 @@
+torch>=2.2
+numpy
+scipy
+matplotlib
+qkan>=0.2.3   # only needed by tests/test_daruan.py (reference DARUAN solver)
+pytest
