@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reproduce every number in REPORT.md.  ~14 CPU-core-hours in total; finished
+# Reproduce every number in REPORT.md.  ~15 CPU-core-hours in total; finished
 # jobs are skipped on rerun.  Run from the repository root.
 set -euo pipefail
 SMALL="bessel shm narma5 narma10 dqc"
@@ -92,5 +92,30 @@ python experiments/run_solar.py --variants mtg_cyc_pm --split 0.6 0.2 0.2 --save
     --out results/final_solar_split622.jsonl
 python experiments/run_solar.py --variants mtg_cyc_pm base --seeds 0 1 2 --split 0.7 0.15 0.15 \
     --out results/final_solar_split71515.jsonl
+
+# ===========================================================================
+# Round 3: checks prompted by external review
+# ===========================================================================
+OURS=pmx_diff8_edge_h3l2
+# closed-form linear autoregression on the same train / test windows
+python experiments/reference_baselines.py
+# does the write-then-read order (as described in arXiv:2607.27945) reproduce the printed baseline numbers?
+python experiments/run_timeseries.py --protocol paper --datasets $SMALL --variants base+wf --out results/robust_writefirst.jsonl
+python experiments/run_timeseries.py --protocol paper --datasets $SMALL --windows 16 --variants gqkan_fwp+wf g_qkanfwp+wf \
+    --out results/robust_writefirst.jsonl
+# NARMA trained on the raw (un-normalised) series
+python experiments/run_timeseries.py --protocol paper --datasets narma5 narma10 --windows 16 --norm none \
+    --variants base base+wf g_qkanfwp g_qkanfwp+wf --out results/robust_norm.jsonl
+# physical <Z> read-out, train-only normalisation, NARMA without the start-up transient
+python experiments/run_timeseries.py --protocol paper --datasets $SMALL --windows 16 --out results/robust_exactz.jsonl \
+    --variants base+z base+z@cos30 $OURS+z@cos30 ar_hqkan8+z@cos30
+python experiments/run_timeseries.py --protocol paper --datasets jc --windows 16 --out results/robust_exactz.jsonl \
+    --variants base+z base+z@cos10 $OURS+z@cos30 ar_hqkan8+z@cos30
+python experiments/run_timeseries.py --protocol paper --datasets $SMALL --windows 16 --norm train --out results/robust_norm.jsonl \
+    --variants base base@cos30 $OURS@cos30 ar_hqkan8@cos30
+python experiments/run_timeseries.py --protocol paper --datasets jc --windows 16 --norm train --out results/robust_norm.jsonl \
+    --variants base base@cos10 $OURS@cos30 ar_hqkan8@cos30
+python experiments/run_timeseries.py --protocol paper --datasets narma5b narma10b --windows 8 16 --out results/robust_burnin.jsonl \
+    --variants base base@cos30 $OURS@cos30 ar_hqkan8@cos30
 
 python experiments/make_figures.py

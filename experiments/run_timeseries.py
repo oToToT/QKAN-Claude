@@ -138,7 +138,20 @@ def resolve(name: str) -> dict:
     """``"<variant>@cos10"`` / ``"<variant>@lr3"``: variant trained with a cosine
     schedule from (or a constant) learning rate of 10e-3 / 3e-3."""
     base, _, tag = name.partition("@")
+    base, *mods = base.split("+")
     spec = dict(pm_variant(base) if base.startswith(("pm_", "pmx_")) else VARIANTS[base])
+    # "+z": physical <Z> = |a|^2 - |b|^2 read-out instead of qkan's default |a| - |b|
+    # "+wf": write-then-read (predict with the updated fast weights)
+    if mods:
+        model = dict(spec["model"])
+        for m in mods:
+            if m == "z":
+                model["fast_measure"] = False
+            elif m == "wf":
+                model["write_first"] = True
+            else:
+                raise ValueError(name)
+        spec["model"] = model
     if not tag:
         return spec
     kind, value = (tag[:3], tag[3:]) if tag.startswith("cos") else (tag[:2], tag[2:])
@@ -160,7 +173,11 @@ def run_job(job: dict) -> dict:
     spec = resolve(job["variant"])
     # Inputs are kept in float64 so that models with ``token_dtype='float64'``
     # can difference them exactly; every model casts to float32 internally.
-    series = data.load_series(job["dataset"], dtype=np.float64)
+    norm = job.get("norm", "global")
+    n_raw = len(data.GENERATORS[job["dataset"]]()) if norm == "train" else 0
+    # for norm='train' the scaling only sees the samples the training windows touch
+    fit_len = int(round((n_raw - job["window"]) * (0.8 if job["protocol"] == "paper" else 0.7))) + job["window"]
+    series = data.load_series(job["dataset"], dtype=np.float64, norm=norm, fit_len=fit_len)
     x, y = data.make_windows(series, job["window"])
     x, y = torch.tensor(x), torch.tensor(y, dtype=torch.float32)
     if job["protocol"] == "paper":
@@ -198,7 +215,7 @@ def run_job(job: dict) -> dict:
 
 
 def key(job: dict) -> tuple:
-    return tuple(job[k] for k in ("dataset", "window", "variant", "seed", "protocol", "epochs"))
+    return tuple(job[k] for k in ("dataset", "window", "variant", "seed", "protocol", "epochs")) + (job.get("norm", "global"),)
 
 
 def main():
@@ -211,6 +228,8 @@ def main():
     ap.add_argument("--epochs", type=int, default=50)
     ap.add_argument("--out", required=True)
     ap.add_argument("--workers", type=int, default=os.cpu_count())
+    ap.add_argument("--norm", choices=["global", "train", "none"], default="global",
+                    help="min-max scaling from the whole series (paper), the training part only, or none")
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -220,12 +239,15 @@ def main():
         for line in out.read_text().splitlines():
             done.add(key(json.loads(line)))
     jobs = [
-        dict(dataset=d, window=w, variant=v, seed=s, protocol=args.protocol, epochs=args.epochs)
+        dict(dataset=d, window=w, variant=v, seed=s, protocol=args.protocol, epochs=args.epochs, norm=args.norm)
         for d, w, v, s in itertools.product(args.datasets, args.windows, args.variants, args.seeds)
     ]
     jobs = [j for j in jobs if key(j) not in done]
     # long jobs (jc, large windows) first so the pool stays balanced
     jobs.sort(key=lambda j: -(3000 if j["dataset"] == "jc" else 300) * (8 + j["window"]))
+    if args.norm == "global":
+        for j in jobs:
+            j.pop("norm")  # keep the default protocol's records identical to earlier runs
     print(f"{len(jobs)} jobs to run ({len(done)} already done)", flush=True)
     with get_context("spawn").Pool(args.workers) as pool, out.open("a") as fh:
         for i, res in enumerate(pool.imap_unordered(run_job, jobs), 1):

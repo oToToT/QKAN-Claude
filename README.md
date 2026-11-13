@@ -5,24 +5,26 @@
 
 **完整分析與結果請看 [`REPORT.md`](REPORT.md)。**
 
-## 主要結果
+## 結論（依外部審查修訂後）
 
-比較規則：方法必須是 QKAN-based、參數量不超過論文的模型、論文用到的每個 dataset 都比、每個 baseline 都調過
-learning rate。
+**不能主張的：**
 
-| 我們的模型 | 參數量（論文） | 結果（5 seeds） |
-|---|---|---|
-| **HQKAN-Δ**：靜態 HQKAN ＋ Δ-token ＋ residual 讀出 | 136（159） | 6 個 time-series dataset × 4 個 window 共 24 格，全部贏過每個 baseline；test MSE 幾何平均比調過 lr 的 baseline 低 129–290 倍 |
-| **QKAN-FWP+**：保留論文的 gated fast-weight 架構 | 149（159） | 24/24 格贏過論文主力模型 GQKAN-QKANFWP（比調過 lr 的版本低 45 倍）；和三個 baseline 中最好的相比贏 21/24 格 |
-| **QKAN-FWP+（太陽黑子）**：多時間尺度 gate ＋ last-cycle residual 讀出 | 11,732（12,474） | 論文的 split：MSE 0.0184 → 0.0134、PAE 45.2 → 37.8、PTE 29.8 → 17.5 |
+- **架構新穎性**：「多時間尺度（分組）gate」已被原團隊的 CMG（arXiv:2607.27945）涵蓋；Δ-token 與 residual 讀出是標準做法。
+- **重現了論文的 baseline**：重現的 GQKAN-QKANFWP 在論文協定下比論文印出的數字差 21 倍（幾何平均），原因未明。
+- **這組 benchmark 上的 MSE 代表模型能力**：9 參數的線性 AR(8)（最小平方法）在 21/24 格贏過我們最好的模型，
+  也在 21/24 格贏過兩篇論文印出的最佳數字。
+- **太陽黑子上穩健的改進**：論文的 split 上三個指標都贏，換 split 後 MSE 的優勢消失。
 
-兩個要一起看的保留：
+**仍然成立的**（同一份資料、同一個 pipeline；模型都是 QKAN-based 且參數量不超過論文）：
 
-- 在六個 time-series 上，沒有 fast weights 的 HQKAN-Δ 比 QKAN-FWP+ 好 2.5 倍（15 seeds）——這組 benchmark 不需要長期記憶。
-- 太陽黑子：零參數的「重複上一個週期」就有 0.0156 / 35.9 / 16.2，已優於論文印出的 0.0168 / 39.59 / 21.89；
-  我們的模型在 validation 期間比 baseline 差，換 split 後 MSE 的優勢也會消失。
+| 模型 | 參數量（論文 159） | 對重現的 GQKAN-QKANFWP（調過 lr） | 對兩篇論文印出的最佳數字 |
+|---|---|---|---|
+| HQKAN-Δ：靜態 HQKAN ＋ Δ-token ＋ residual 讀出 | 136 | 24/24 格較低，幾何平均低 175 倍 | 21/24 格較低，低 19.5 倍 |
+| QKAN-FWP+：保留 gated fast-weight 架構 | 149 | 24/24 格較低，低 45 倍 | 18/24 格較低，低 5 倍 |
 
-沒有做：MiniGrid RL（論文 Sec. 6.3）與真機實驗。
+這些結論在改用物理的 ⟨Z⟩ 讀出、只用訓練段正規化、NARMA 去掉暫態之後都不變。
+
+沒有做：MiniGrid RL、真機實驗、CMG 與 VQC 系列模型的重現。逐條審查回應見 `REPORT.md` 第 0 節。
 
 ![time-series main](figures/timeseries_main.png)
 
@@ -36,6 +38,7 @@ learning rate。
 | `qkanfwp/data.py` | Bessel、Damped SHM、NARMA5/10、Delayed Quantum Control、Jaynes–Cummings、SILSO 太陽黑子 |
 | `experiments/run_timeseries.py` | 一步預測 benchmark（論文 Sec. 6.1） |
 | `experiments/run_solar.py` | 太陽黑子週期 direct multi-step 預測（論文 Sec. 6.2） |
+| `experiments/reference_baselines.py` | 線性 AR 參考線（最小平方法，與神經模型相同的 train/test window） |
 | `experiments/make_figures.py` | 由 `results/*.jsonl` 產生 `figures/`、`results/tables_final.md`、`results/tables_stage1.md` |
 | `experiments/run_all.sh` | 重現所有數字的完整指令 |
 | `results/` | 所有 run 的原始結果（JSON lines） |
@@ -52,7 +55,7 @@ python experiments/run_timeseries.py --datasets narma10 --windows 16 \
     --variants base base@cos30 pmx_diff8_edge_h3l2@cos30 ar_hqkan8@cos30 --out results/quick.jsonl
 python experiments/aggregate.py results/quick.jsonl
 
-# 全部重現（約 14 CPU core-hours，可中斷續跑）
+# 全部重現（約 15 CPU core-hours，可中斷續跑）
 bash experiments/run_all.sh
 ```
 

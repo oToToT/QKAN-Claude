@@ -45,9 +45,12 @@ def damped_shm(n: int = 300, t_max: float = 20.0) -> np.ndarray:
     return sol.y[1]
 
 
-def narma(order: int, n: int = 300) -> np.ndarray:
+def narma(order: int, n: int = 300, burn_in: int = 0) -> np.ndarray:
+    """NARMA series of length ``n``.  ``burn_in`` extra steps are simulated
+    first and discarded, which removes the start-up transient from zero."""
     alpha, beta, gamma, delta = 0.3, 0.05, 1.5, 0.1
     a_bar, b_bar, g_bar, period = 2.11, 3.73, 4.11, 100.0
+    n_out, n = n, n + burn_in
     t = np.arange(n)
     u = 0.1 * (
         np.sin(2 * np.pi * a_bar * t / period)
@@ -65,7 +68,7 @@ def narma(order: int, n: int = 300) -> np.ndarray:
             + gamma * u[k - order + 1] * u[k]
             + delta
         )
-    return y
+    return y[-n_out:]
 
 
 def dqc(n: int = 300) -> np.ndarray:
@@ -121,15 +124,27 @@ GENERATORS = {
     "shm": damped_shm,
     "narma5": lambda: narma(5),
     "narma10": lambda: narma(10),
+    # robustness variants: 200 burn-in steps discarded, so no start-up transient
+    "narma5b": lambda: narma(5, burn_in=200),
+    "narma10b": lambda: narma(10, burn_in=200),
     "dqc": dqc,
     "jc": jaynes_cummings,
 }
 
 
-def load_series(name: str, dtype=np.float32) -> np.ndarray:
-    """Return the series min-max normalised to [-1, 1] as in the paper."""
+def load_series(name: str, dtype=np.float32, norm: str = "global", fit_len: int | None = None) -> np.ndarray:
+    """Return the series min-max normalised to [-1, 1].
+
+    ``norm='global'`` uses the min / max of the whole series (the paper's
+    protocol: normalise, then split - the test range leaks into the scaling).
+    ``norm='train'`` takes them from the first ``fit_len`` samples only, and
+    ``norm='none'`` returns the raw series.
+    """
     s = np.asarray(GENERATORS[name](), dtype=np.float64)
-    lo, hi = s.min(), s.max()
+    if norm == "none":
+        return s.astype(dtype)
+    ref = s if norm == "global" else s[:fit_len]
+    lo, hi = ref.min(), ref.max()
     return (2.0 * (s - lo) / (hi - lo) - 1.0).astype(dtype)
 
 

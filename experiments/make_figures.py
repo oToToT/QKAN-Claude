@@ -449,6 +449,16 @@ PAPER = {
     "dqc": dict(own=[4.8e-5, 4.1e-5, 8.9e-5, 2.21e-4], best=[3.3e-5, 4.1e-5, 5.3e-5, 1.17e-4]),
     "jc": dict(own=[2.01e-4, 1.59e-4, 1.96e-4, 3.22e-4], best=[9.2e-5, 7.0e-5, 1.96e-4, 3.7e-5]),
 }
+# Best printed test MSE of the follow-up paper arXiv:2607.27945 (Tables II-V; 100 epochs,
+# best of its five selected models), for N = 8, 16, 32, 64.
+PAPER_CMG = {
+    "bessel": [8.73e-6, 4.94e-6, 2.90e-6, 6.37e-6],
+    "shm": [1.17e-5, 1.42e-5, 3.60e-6, 1.00e-5],
+    "narma5": [4.91e-6, 5.21e-6, 7.13e-6, 9.58e-6],
+    "narma10": [2.25e-5, 2.55e-6, 1.33e-5, 1.36e-5],
+    "dqc": [3.52e-6, 6.94e-6, 7.82e-6, 4.77e-6],
+    "jc": [1.66e-5, 3.18e-6, 9.10e-6, 7.04e-6],
+}
 PAPER_SOLAR = dict(params=12474, mse=(0.0168, 0.0016), pae=(39.59, 2.82), pte=(21.89, 1.57))
 
 FINAL_NAMES = {
@@ -499,6 +509,111 @@ def solar_eval_anchor(split):
                 pae=((tgt.max(1).values - pred.max(1).values).abs() * (hi - lo)).mean().item(),
                 pte=(tgt.argmax(1) - pred.argmax(1)).abs().float().mean().item(),
             )
+    return out
+
+
+def review_tables(c, baselines, tuned_b, names, params):
+    """Tables added after the external review: closed-form linear reference,
+    reproduction gap to the printed numbers, and robustness checks."""
+    out = []
+    gmean = lambda xs: float(np.exp(np.mean(np.log(xs))))  # noqa: E731
+    m = lambda d, w, v, cc=None: float(np.mean(list((cc or c)[(d, w, v)].values())))  # noqa: E731
+
+    # ---- (a) linear autoregression fitted by least squares ----
+    ref_file = RES / "reference_linear_ar.json"
+    if ref_file.exists():
+        ar = json.loads(ref_file.read_text())
+        out += ["## Closed-form linear reference vs every model (test MSE)\n",
+                "| Dataset | N | Best tuned re-implemented baseline | QKAN-FWP+ | HQKAN-Δ | Printed best, 2605.06734 | Printed best, 2607.27945 | Linear AR(3), 4 params | Linear AR(8), 9 params |",
+                "|---|---|---|---|---|---|---|---|---|"]
+        n = n_ar8_ours = n_ar8_paper = n_ar3_ours = 0
+        for d in DATASETS:
+            for i, w in enumerate(WINDOWS):
+                vals = [min(m(d, w, b) for b in tuned_b), m(d, w, OURS), m(d, w, STATIC), PAPER[d]["best"][i],
+                        PAPER_CMG[d][i], ar[f"{d}|{w}|3"]["test"], ar[f"{d}|{w}|8"]["test"]]
+                lo = min(vals)
+                out.append(f"| {TITLES[d]} | {w} | " + " | ".join(f"**{v:.1e}**" if v == lo else f"{v:.1e}" for v in vals) + " |")
+                n += 1
+                n_ar8_ours += vals[6] < vals[2]
+                n_ar3_ours += vals[5] < vals[2]
+                n_ar8_paper += vals[6] < min(vals[3], vals[4])
+        out += ["", f"- Linear AR(8) is below HQKAN-Δ in {n_ar8_ours}/{n} cells and linear AR(3) in {n_ar3_ours}/{n} cells.",
+                f"- Linear AR(8) is below the best printed number of both papers in {n_ar8_paper}/{n} cells.", ""]
+
+    # ---- (b) reproduction gap ----
+    wf = cells(load([RES / "robust_writefirst.jsonl"], protocol="paper")) if (RES / "robust_writefirst.jsonl").exists() else {}
+    out += ["## Reproduction gap: re-implemented GQKAN-QKANFWP (paper protocol) vs the number printed in the paper\n",
+            "| Dataset | N | Printed (2605.06734) | Re-implementation, read-then-write | ratio | Re-implementation, write-then-read | ratio |",
+            "|---|---|---|---|---|---|---|"]
+    r_rf, r_wf = [], []
+    for d in DATASETS:
+        for i, w in enumerate(WINDOWS):
+            p_ = PAPER[d]["own"][i]
+            a = m(d, w, "base")
+            r_rf.append(a / p_)
+            row = f"| {TITLES[d]} | {w} | {p_:.1e} | {a:.2e} | {a / p_:.1f}× |"
+            if (d, w, "base+wf") in wf:
+                b = m(d, w, "base+wf", wf)
+                r_wf.append(b / p_)
+                row += f" {b:.2e} | {b / p_:.1f}× |"
+            else:
+                row += " – | – |"
+            out.append(row)
+    out += ["", f"- Geometric-mean ratio over the 24 cells (read-then-write): {gmean(r_rf):.1f}×; over the 20 cells of the five 300-point series: "
+            f"read-then-write {gmean(r_rf[:20]):.1f}×, write-then-read {gmean(r_wf):.1f}×." if r_wf else "", ""]
+    # how far are our final models from the printed numbers, in the same terms
+    for o in (OURS, STATIC):
+        if any(k[2] == o for k in c):
+            r_own = [m(d, w, o) / PAPER[d]["own"][i] for d in DATASETS for i, w in enumerate(WINDOWS)]
+            r_best = [m(d, w, o) / min(PAPER[d]["best"][i], PAPER_CMG[d][i]) for d in DATASETS for i, w in enumerate(WINDOWS)]
+            out.append(f"- {names[o]}: {1 / gmean(r_own):.0f}× below the printed GQKAN-QKANFWP numbers (geometric mean, 24 cells); "
+                       f"{1 / gmean(r_best):.1f}× below the best printed number of either paper, lower in {sum(r < 1 for r in r_best)}/24 cells.")
+    out.append("")
+
+    # ---- (c) robustness at N = 16 ----
+    conds = [("Default (as in all tables above)", c, {"base": "base", "tuned": "base_tuned", "fwp": OURS, "static": STATIC})]
+    f = RES / "robust_exactz.jsonl"
+    if f.exists():
+        cz = cells(load([f], protocol="paper"))
+        for (d, w, v), vals in list(cz.items()):
+            if (v == "base+z@cos10" and d == "jc") or (v == "base+z@cos30" and d != "jc"):
+                cz[(d, w, "tuned+z")] = vals
+        conds.append(("Physical read-out ⟨Z⟩ = |a|² − |b|² in every DARUAN circuit", cz,
+                      {"base": "base+z", "tuned": "tuned+z", "fwp": "pmx_diff8_edge_h3l2+z@cos30", "static": "ar_hqkan8+z@cos30"}))
+    f = RES / "robust_norm.jsonl"
+    if f.exists():
+        rows_n = [r for r in load([f], protocol="paper") if r.get("norm") == "train"]
+        cn = cells(rows_n)
+        for (d, w, v), vals in list(cn.items()):
+            if (v == "base@cos10" and d == "jc") or (v == "base@cos30" and d != "jc"):
+                cn[(d, w, "base_tuned")] = vals
+        conds.append(("Min–max scaling fitted on the training part only", cn,
+                      {"base": "base", "tuned": "base_tuned", "fwp": OURS, "static": STATIC}))
+    out += ["## Robustness checks at N = 16 (test MSE, 5 seeds)\n"]
+    for title, cc, v in conds:
+        ds = [d for d in DATASETS if all((d, 16, v[k]) in cc for k in v)]
+        if not ds:
+            continue
+        out += [f"**{title}**\n", "| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |", "|---|---|---|---|---|"]
+        for d in ds:
+            out.append(f"| {TITLES[d]} | " + " | ".join(f"{m(d, 16, v[k], cc):.2e}" for k in ("base", "tuned", "fwp", "static")) + " |")
+        rf = gmean([m(d, 16, v["fwp"], cc) / m(d, 16, v["tuned"], cc) for d in ds])
+        rs = gmean([m(d, 16, v["static"], cc) / m(d, 16, v["tuned"], cc) for d in ds])
+        wf_ = sum(m(d, 16, v["fwp"], cc) < m(d, 16, v["tuned"], cc) for d in ds)
+        ws = sum(m(d, 16, v["static"], cc) < m(d, 16, v["tuned"], cc) for d in ds)
+        out += ["", f"- vs the tuned baseline over {len(ds)} datasets: QKAN-FWP+ {1 / rf:.0f}× lower ({wf_}/{len(ds)}), HQKAN-Δ {1 / rs:.0f}× lower ({ws}/{len(ds)}).", ""]
+
+    # ---- (d) NARMA without the start-up transient ----
+    f = RES / "robust_burnin.jsonl"
+    if f.exists():
+        cb = cells(load([f], protocol="paper"))
+        out += ["## NARMA without the start-up transient (200 burn-in steps discarded; test MSE, 5 seeds)\n",
+                "| Dataset | N | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |", "|---|---|---|---|---|---|"]
+        for d, t_ in (("narma5b", "NARMA5"), ("narma10b", "NARMA10")):
+            for w in (8, 16):
+                if all((d, w, v) in cb for v in ("base", "base@cos30", OURS, STATIC)):
+                    out.append(f"| {t_} | {w} | " + " | ".join(f"{m(d, w, v, cb):.2e}" for v in ("base", "base@cos30", OURS, STATIC)) + " |")
+        out.append("")
     return out
 
 
@@ -566,14 +681,16 @@ def final_report():
     tuned_b = [b for b in baselines if b != "base"]
     head = [o for o in (OURS, STATIC) if o in ours_all]  # the two headline models
     short = {OURS: "QKAN-FWP+", STATIC: "HQKAN-Δ"}
+    ar_ref = json.loads((RES / "reference_linear_ar.json").read_text()) if (RES / "reference_linear_ar.json").exists() else None
+    gm_list = lambda xs: float(np.exp(np.mean(np.log(xs))))  # noqa: E731
     out += ["## Per-dataset summary (geometric mean over N ∈ {8, 16, 32, 64} of the seed-mean test MSE)\n",
-            "| Dataset | Baseline, paper protocol | Best tuned baseline | " + " | ".join(f"{short[o]} ({params[o]} params)" for o in head)
-            + " | " + " | ".join(f"{short[o]} vs best tuned baseline" for o in head) + " |",
-            "|---|---|---|" + "---|" * (2 * len(head))]
+            "| Dataset | Printed in 2605.06734 (its GQKAN-QKANFWP) | Re-implemented baseline, paper protocol | Best tuned re-implemented baseline | "
+            + " | ".join(f"{short[o]} ({params[o]} params)" for o in head) + " | Linear AR(8), least squares (9 params) |",
+            "|---|---|---|---|" + "---|" * (len(head) + 1)]
     for d in DATASETS:
         bb = min(gm(d, b) for b in tuned_b)
-        row = f"| {TITLES[d]} | {gm(d, 'base'):.2e} | {bb:.2e} | " + " | ".join(f"{gm(d, o):.2e}" for o in head)
-        row += " | " + " | ".join(f"{bb / gm(d, o):.0f}× lower" if gm(d, o) < bb else f"{gm(d, o) / bb:.1f}× higher" for o in head) + " |"
+        row = f"| {TITLES[d]} | {gm_list(PAPER[d]['own']):.1e} | {gm(d, 'base'):.1e} | {bb:.1e} | " + " | ".join(f"{gm(d, o):.1e}" for o in head)
+        row += f" | {gm_list([ar_ref[f'{d}|{w}|8']['test'] for w in WINDOWS]):.1e} |" if ar_ref else " | – |"
         out.append(row)
     out.append("")
 
@@ -623,6 +740,8 @@ def final_report():
     if STATIC in ours_all:
         series.append((STATIC, "#e87ba4", f"HQKAN-Δ ({params[STATIC]} params)", "P"))
     fig_base_vs_ext(c, series, FIG / "timeseries_main.png")
+
+    out += review_tables(c, baselines, tuned_b, names, params)
 
     # ---------------- solar ----------------
     by, by622, by715 = {}, {}, {}

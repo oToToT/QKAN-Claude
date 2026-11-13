@@ -62,14 +62,14 @@ Better than the best of all re-implemented baselines in 24/24 cells.
 
 ## Per-dataset summary (geometric mean over N ∈ {8, 16, 32, 64} of the seed-mean test MSE)
 
-| Dataset | Baseline, paper protocol | Best tuned baseline | QKAN-FWP+ (149 params) | HQKAN-Δ (136 params) | QKAN-FWP+ vs best tuned baseline | HQKAN-Δ vs best tuned baseline |
+| Dataset | Printed in 2605.06734 (its GQKAN-QKANFWP) | Re-implemented baseline, paper protocol | Best tuned re-implemented baseline | QKAN-FWP+ (149 params) | HQKAN-Δ (136 params) | Linear AR(8), least squares (9 params) |
 |---|---|---|---|---|---|---|
-| Bessel J2 | 6.55e-04 | 2.93e-06 | 1.50e-06 | 1.36e-07 | 2× lower | 21× lower |
-| Damped SHM | 1.01e-04 | 5.77e-06 | 1.86e-06 | 3.24e-07 | 3× lower | 18× lower |
-| NARMA5 | 1.82e-03 | 1.67e-04 | 5.99e-06 | 2.91e-06 | 28× lower | 57× lower |
-| NARMA10 | 2.70e-03 | 5.96e-04 | 8.07e-06 | 2.74e-06 | 74× lower | 217× lower |
-| Delayed quantum control | 1.86e-03 | 4.05e-04 | 8.05e-06 | 3.52e-06 | 50× lower | 115× lower |
-| Jaynes–Cummings | 4.03e-05 | 1.16e-05 | 7.40e-09 | 1.75e-09 | 1569× lower | 6646× lower |
+| Bessel J2 | 1.7e-05 | 6.5e-04 | 2.9e-06 | 1.5e-06 | 1.4e-07 | 5.3e-24 |
+| Damped SHM | 4.0e-05 | 1.0e-04 | 5.8e-06 | 1.9e-06 | 3.2e-07 | 9.0e-14 |
+| NARMA5 | 3.9e-05 | 1.8e-03 | 1.7e-04 | 6.0e-06 | 2.9e-06 | 1.3e-06 |
+| NARMA10 | 7.5e-05 | 2.7e-03 | 6.0e-04 | 8.1e-06 | 2.7e-06 | 1.7e-06 |
+| Delayed quantum control | 7.9e-05 | 1.9e-03 | 4.1e-04 | 8.0e-06 | 3.5e-06 | 2.6e-07 |
+| Jaynes–Cummings | 2.1e-04 | 4.0e-05 | 1.2e-05 | 7.4e-09 | 1.7e-09 | 1.1e-31 |
 
 ## Ours vs the numbers printed in the paper (Tables 4–6)
 
@@ -120,6 +120,122 @@ Better than the best of all re-implemented baselines in 24/24 cells.
 | Ours with the paper's scalar gate | 146 | **0.0031** | 10/10 | 0.0019 | 0.0099 | 0.0027 | 0.0016 | 0.0035 |
 | HQKAN-Δ: no fast weights (static HQKAN, same tokens) | 136 | **0.00091** | 10/10 | 0.00026 | 0.0023 | 0.00095 | 0.00043 | 0.0026 |
 | LSTM with the same tokens and residual (not QKAN) | 160 | **0.00093** | 10/10 | 0.0004 | 0.0013 | 0.0012 | 0.0006 | 0.0018 |
+
+## Closed-form linear reference vs every model (test MSE)
+
+| Dataset | N | Best tuned re-implemented baseline | QKAN-FWP+ | HQKAN-Δ | Printed best, 2605.06734 | Printed best, 2607.27945 | Linear AR(3), 4 params | Linear AR(8), 9 params |
+|---|---|---|---|---|---|---|---|---|
+| Bessel J2 | 8 | 4.8e-06 | 1.1e-06 | 8.4e-08 | 2.5e-05 | 8.7e-06 | 7.4e-10 | **1.3e-23** |
+| Bessel J2 | 16 | 2.6e-06 | 1.6e-06 | 1.2e-07 | 1.1e-05 | 4.9e-06 | 7.2e-10 | **1.0e-23** |
+| Bessel J2 | 32 | 1.2e-06 | 1.4e-06 | 1.2e-07 | 1.5e-05 | 2.9e-06 | 6.1e-10 | **5.7e-24** |
+| Bessel J2 | 64 | 1.4e-06 | 2.0e-06 | 2.7e-07 | 2.1e-05 | 6.4e-06 | 2.1e-10 | **1.0e-24** |
+| Damped SHM | 8 | 4.4e-06 | 1.6e-06 | 2.5e-07 | 8.9e-05 | 1.2e-05 | 1.7e-08 | **1.1e-13** |
+| Damped SHM | 16 | 1.0e-05 | 1.4e-06 | 2.0e-07 | 3.6e-05 | 1.4e-05 | 9.8e-09 | **1.6e-13** |
+| Damped SHM | 32 | 4.3e-06 | 2.5e-06 | 5.2e-07 | 1.9e-05 | 3.6e-06 | 6.7e-09 | **8.9e-14** |
+| Damped SHM | 64 | 1.5e-06 | 2.2e-06 | 4.2e-07 | 4.3e-05 | 1.0e-05 | 4.5e-09 | **4.3e-14** |
+| NARMA5 | 8 | 1.9e-04 | 3.6e-05 | 1.4e-05 | 5.0e-06 | **4.9e-06** | 8.0e-05 | 3.8e-05 |
+| NARMA5 | 16 | 1.7e-04 | 3.7e-06 | 1.8e-06 | 1.2e-05 | 5.2e-06 | 5.6e-05 | **5.3e-07** |
+| NARMA5 | 32 | 1.8e-04 | 3.8e-06 | 2.1e-06 | 1.1e-05 | 7.1e-06 | 5.7e-05 | **4.7e-07** |
+| NARMA5 | 64 | 1.4e-04 | 2.6e-06 | 1.4e-06 | 1.0e-05 | 9.6e-06 | 4.3e-05 | **3.1e-07** |
+| NARMA10 | 8 | 7.1e-04 | 8.1e-05 | 4.3e-05 | 4.3e-05 | **2.3e-05** | 1.2e-03 | 1.1e-03 |
+| NARMA10 | 16 | 4.8e-04 | 4.3e-06 | 2.1e-06 | **2.0e-06** | 2.6e-06 | 5.0e-05 | 3.1e-06 |
+| NARMA10 | 32 | 5.6e-04 | 3.1e-06 | 9.5e-07 | 1.6e-05 | 1.3e-05 | 5.2e-05 | **4.8e-08** |
+| NARMA10 | 64 | 5.2e-04 | 3.9e-06 | 6.4e-07 | 2.0e-05 | 1.4e-05 | 4.8e-05 | **4.7e-08** |
+| Delayed quantum control | 8 | 5.7e-04 | 1.0e-05 | 3.5e-06 | 3.3e-05 | 3.5e-06 | 7.3e-05 | **2.3e-07** |
+| Delayed quantum control | 16 | 4.6e-04 | 9.0e-06 | 5.9e-06 | 4.1e-05 | 6.9e-06 | 7.5e-05 | **3.0e-07** |
+| Delayed quantum control | 32 | 3.2e-04 | 4.3e-06 | 2.7e-06 | 5.3e-05 | 7.8e-06 | 6.7e-05 | **3.0e-07** |
+| Delayed quantum control | 64 | 3.1e-04 | 1.1e-05 | 2.8e-06 | 1.2e-04 | 4.8e-06 | 6.6e-05 | **2.4e-07** |
+| Jaynes–Cummings | 8 | 1.6e-05 | 7.7e-09 | 1.4e-09 | 9.2e-05 | 1.7e-05 | 3.9e-30 | **3.4e-31** |
+| Jaynes–Cummings | 16 | 1.0e-05 | 3.7e-09 | 1.7e-09 | 7.0e-05 | 3.2e-06 | 4.1e-30 | **1.2e-31** |
+| Jaynes–Cummings | 32 | 1.1e-05 | 6.2e-09 | 3.2e-09 | 2.0e-04 | 9.1e-06 | 6.3e-31 | **8.7e-32** |
+| Jaynes–Cummings | 64 | 1.0e-05 | 1.7e-08 | 1.2e-09 | 3.7e-05 | 7.0e-06 | 1.1e-29 | **4.6e-32** |
+
+- Linear AR(8) is below HQKAN-Δ in 21/24 cells and linear AR(3) in 12/24 cells.
+- Linear AR(8) is below the best printed number of both papers in 21/24 cells.
+
+## Reproduction gap: re-implemented GQKAN-QKANFWP (paper protocol) vs the number printed in the paper
+
+| Dataset | N | Printed (2605.06734) | Re-implementation, read-then-write | ratio | Re-implementation, write-then-read | ratio |
+|---|---|---|---|---|---|---|
+| Bessel J2 | 8 | 2.5e-05 | 5.49e-04 | 22.0× | 9.50e-04 | 38.0× |
+| Bessel J2 | 16 | 1.1e-05 | 8.35e-04 | 75.9× | 1.04e-03 | 95.0× |
+| Bessel J2 | 32 | 1.5e-05 | 6.90e-04 | 46.0× | 9.26e-04 | 61.7× |
+| Bessel J2 | 64 | 2.1e-05 | 5.81e-04 | 27.7× | 7.82e-04 | 37.2× |
+| Damped SHM | 8 | 8.9e-05 | 8.72e-05 | 1.0× | 1.85e-03 | 20.8× |
+| Damped SHM | 16 | 3.6e-05 | 1.18e-04 | 3.3× | 1.75e-03 | 48.5× |
+| Damped SHM | 32 | 1.9e-05 | 6.98e-05 | 3.7× | 1.62e-03 | 85.4× |
+| Damped SHM | 64 | 4.3e-05 | 1.42e-04 | 3.3× | 1.73e-03 | 40.3× |
+| NARMA5 | 8 | 2.0e-05 | 1.79e-03 | 89.7× | 1.36e-03 | 67.9× |
+| NARMA5 | 16 | 2.8e-05 | 1.94e-03 | 69.5× | 1.41e-03 | 50.4× |
+| NARMA5 | 32 | 4.8e-05 | 2.23e-03 | 46.4× | 1.60e-03 | 33.3× |
+| NARMA5 | 64 | 8.7e-05 | 1.40e-03 | 16.1× | 1.03e-03 | 11.9× |
+| NARMA10 | 8 | 1.0e-04 | 2.48e-03 | 24.8× | 2.26e-03 | 22.6× |
+| NARMA10 | 16 | 5.2e-05 | 2.70e-03 | 51.9× | 2.11e-03 | 40.6× |
+| NARMA10 | 32 | 5.5e-05 | 2.89e-03 | 52.5× | 2.23e-03 | 40.6× |
+| NARMA10 | 64 | 1.1e-04 | 2.75e-03 | 25.4× | 2.02e-03 | 18.7× |
+| Delayed quantum control | 8 | 4.8e-05 | 2.56e-03 | 53.4× | 5.70e-03 | 118.9× |
+| Delayed quantum control | 16 | 4.1e-05 | 2.04e-03 | 49.8× | 5.04e-03 | 122.9× |
+| Delayed quantum control | 32 | 8.9e-05 | 1.91e-03 | 21.5× | 4.73e-03 | 53.2× |
+| Delayed quantum control | 64 | 2.2e-04 | 1.20e-03 | 5.4× | 4.16e-03 | 18.8× |
+| Jaynes–Cummings | 8 | 2.0e-04 | 2.75e-05 | 0.1× | – | – |
+| Jaynes–Cummings | 16 | 1.6e-04 | 4.25e-05 | 0.3× | – | – |
+| Jaynes–Cummings | 32 | 2.0e-04 | 3.38e-05 | 0.2× | – | – |
+| Jaynes–Cummings | 64 | 3.2e-04 | 6.66e-05 | 0.2× | – | – |
+
+- Geometric-mean ratio over the 24 cells (read-then-write): 9.5×; over the 20 cells of the five 300-point series: read-then-write 20.7×, write-then-read 42.6×.
+
+- QKAN-FWP+ (ours): 40× below the printed GQKAN-QKANFWP numbers (geometric mean, 24 cells); 5.0× below the best printed number of either paper, lower in 18/24 cells.
+- HQKAN-Δ, no fast weights (ours): 158× below the printed GQKAN-QKANFWP numbers (geometric mean, 24 cells); 19.5× below the best printed number of either paper, lower in 21/24 cells.
+
+## Robustness checks at N = 16 (test MSE, 5 seeds)
+
+**Default (as in all tables above)**
+
+| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |
+|---|---|---|---|---|
+| Bessel J2 | 8.35e-04 | 4.27e-06 | 1.64e-06 | 1.21e-07 |
+| Damped SHM | 1.18e-04 | 1.15e-05 | 1.38e-06 | 2.01e-07 |
+| NARMA5 | 1.94e-03 | 2.29e-04 | 3.67e-06 | 1.79e-06 |
+| NARMA10 | 2.70e-03 | 5.24e-04 | 4.31e-06 | 2.14e-06 |
+| Delayed quantum control | 2.04e-03 | 4.63e-04 | 9.03e-06 | 5.92e-06 |
+| Jaynes–Cummings | 4.25e-05 | 2.24e-05 | 3.68e-09 | 1.70e-09 |
+
+- vs the tuned baseline over 6 datasets: QKAN-FWP+ 61× lower (6/6), HQKAN-Δ 201× lower (6/6).
+
+**Physical read-out ⟨Z⟩ = |a|² − |b|² in every DARUAN circuit**
+
+| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |
+|---|---|---|---|---|
+| Bessel J2 | 5.90e-04 | 6.54e-06 | 1.53e-06 | 1.98e-07 |
+| Damped SHM | 1.24e-04 | 1.85e-05 | 1.30e-06 | 4.62e-07 |
+| NARMA5 | 1.89e-03 | 2.33e-04 | 4.80e-06 | 2.24e-06 |
+| NARMA10 | 2.49e-03 | 5.37e-04 | 8.45e-06 | 2.73e-06 |
+| Delayed quantum control | 1.73e-03 | 5.64e-04 | 1.27e-05 | 8.70e-06 |
+| Jaynes–Cummings | 4.53e-05 | 1.98e-05 | 1.41e-08 | 5.77e-09 |
+
+- vs the tuned baseline over 6 datasets: QKAN-FWP+ 48× lower (6/6), HQKAN-Δ 135× lower (6/6).
+
+**Min–max scaling fitted on the training part only**
+
+| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |
+|---|---|---|---|---|
+| Bessel J2 | 8.35e-04 | 4.27e-06 | 1.64e-06 | 1.21e-07 |
+| Damped SHM | 1.18e-04 | 1.15e-05 | 1.38e-06 | 2.01e-07 |
+| NARMA5 | 1.99e-03 | 2.31e-04 | 3.71e-06 | 1.80e-06 |
+| NARMA10 | 2.70e-03 | 5.24e-04 | 4.31e-06 | 2.14e-06 |
+| Delayed quantum control | 2.04e-03 | 4.63e-04 | 9.03e-06 | 5.92e-06 |
+| Jaynes–Cummings | 4.25e-05 | 2.24e-05 | 3.68e-09 | 1.70e-09 |
+
+- vs the tuned baseline over 6 datasets: QKAN-FWP+ 61× lower (6/6), HQKAN-Δ 201× lower (6/6).
+
+## NARMA without the start-up transient (200 burn-in steps discarded; test MSE, 5 seeds)
+
+| Dataset | N | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |
+|---|---|---|---|---|---|
+| NARMA5 | 8 | 3.17e-03 | 3.13e-03 | 1.33e-05 | 6.60e-06 |
+| NARMA5 | 16 | 3.02e-03 | 2.54e-03 | 1.18e-05 | 5.55e-06 |
+| NARMA10 | 8 | 5.29e-03 | 4.79e-03 | 9.90e-06 | 3.90e-06 |
+| NARMA10 | 16 | 5.46e-03 | 7.70e-03 | 9.52e-06 | 3.98e-06 |
 
 ## Solar cycle: final comparison (paper split and protocol, lr 2.5e-3, 5 seeds, test metrics)
 

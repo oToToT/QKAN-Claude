@@ -403,6 +403,8 @@ class GatedFWP(nn.Module):
         tok = self.tokens(x)
         y = self.read(tok[:, -1], self.fast_weights(tok))
         if cfg.skip == "last":
+            # parameter-free skip: add the last observed value (for a scalar
+            # series the mean over the feature axis is a no-op)
             y = y + x[:, -1, : min(cfg.d_in, cfg.d_out)].float().mean(-1, keepdim=True)
         elif cfg.skip == "mean":
             y = y + x[:, -cfg.context :].float().mean((1, 2))[:, None]
@@ -436,11 +438,12 @@ class ARHQKAN(nn.Module):
     last token only (same tokenisation and residual read-out as ``GatedFWP``)."""
 
     def __init__(self, context: int, hidden: int, latent: int, reps: int, d_out: int = 1,
-                 skip: str = "none", context_mode: str = "lags", token_dtype: str = "float32"):
+                 skip: str = "none", context_mode: str = "lags", token_dtype: str = "float32",
+                 fast_measure: bool = True):
         super().__init__()
         self.skip = skip
         self.tokenizer = Tokenizer(1, context, context_mode, dtype=token_dtype)
-        self.net = SlowHQKAN(context, hidden, latent, reps, d_out)
+        self.net = SlowHQKAN(context, hidden, latent, reps, d_out, fast_measure)
 
     def fit_token_scale(self, x_train):
         self.tokenizer.fit_scale(x_train)
