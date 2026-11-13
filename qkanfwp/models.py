@@ -24,7 +24,12 @@ per gate group):
   ``(x_{t-p+1}, ..., x_t)`` instead of the scalar ``x_t`` (patch / delay
   embedding, stride ``stride``); with ``context_mode='diff'`` the patch is
   expressed as ``(x_t, Dx_t, D^2x_t, ...)`` with unit-variance differences.
-* ``skip``         - residual read-out ``y = anchor(x) + F(...)``.
+* ``skip``         - residual read-out ``y = anchor(x) + F(...)``; the anchor is
+  the last value (one-step tasks) or the smoothed last cycle (``'cycle'``,
+  multi-step seasonal forecasts).
+* ``out_basis``    - multi-step read-out through a fixed smooth cosine basis.
+* ``write_first``  - apply the update of the current step before reading, so
+  the newest token also reaches the slow programmer.
 """
 
 from __future__ import annotations
@@ -61,8 +66,15 @@ class FWPConfig:
     # tokenisation / read-out
     context: int = 1
     context_mode: str = "lags"  # 'lags' (raw patch) | 'diff' (value + backward differences)
+    token_dtype: str = "float32"  # 'float64': form the differences in double precision
     stride: int = 1
-    skip: str = "none"  # 'none' | 'last' | 'mean'
+    skip: str = "none"  # 'none' | 'last' | 'mean' | 'cycle'
+    skip_smooth: int = 13  # moving-average width of the 'cycle' anchor
+    out_basis: int = 0  # > 0: decode the output as that many smooth cosine modes
+    # False: y_T = F(x_T; W_T), the paper's read-before-write order.
+    # True : y_T = F(x_T; W_{T+1}); the newest token also programs the fast weights
+    #        (the order used by linear-transformer fast weight programmers).
+    write_first: bool = False
     fast_measure: bool = True
 
     def to_dict(self):
@@ -133,9 +145,14 @@ class Tokenizer(nn.Module):
     ``stride > 1`` keeps the most recent token and every ``stride``-th before it.
     """
 
-    def __init__(self, d_in: int = 1, context: int = 1, mode: str = "lags", stride: int = 1):
+    def __init__(self, d_in: int = 1, context: int = 1, mode: str = "lags", stride: int = 1,
+                 dtype: str = "float32"):
         super().__init__()
         self.d_in, self.context, self.mode, self.stride = d_in, context, mode, stride
+        # High-order differences of a smooth series cancel many leading digits
+        # (in float32 the 6th difference of the Bessel series is ~90 % rounding
+        # noise), so they can be formed in float64 when the input is float64.
+        self.work_dtype = torch.float64 if dtype == "float64" else torch.float32
         self.d_tok = d_in * context
         if mode == "diff":
             assert d_in == 1, "difference tokens are implemented for scalar series"
@@ -150,16 +167,17 @@ class Tokenizer(nn.Module):
             raise ValueError(mode)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.to(self.work_dtype)
         if self.context > 1:
             pad = x[:, :1].expand(-1, self.context - 1, -1)  # replicate-pad the past
             xp = torch.cat([pad, x], 1)
             x = xp.unfold(1, self.context, 1).reshape(x.shape[0], x.shape[1], -1)
             if self.mode == "diff":
-                x = (x @ self.diff_matrix.T) / self.scale
+                x = (x @ self.diff_matrix.T.to(x.dtype)) / self.scale.to(x.dtype)
         if self.stride > 1:
             start = (x.shape[1] - 1) % self.stride
             x = x[:, start :: self.stride]
-        return x
+        return x.float()
 
     @torch.no_grad()
     def fit_scale(self, x_train: torch.Tensor) -> None:
@@ -211,13 +229,25 @@ class GatedFWP(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.dedup_min_tokens = 4096
-        self.tokenizer = Tokenizer(cfg.d_in, cfg.context, cfg.context_mode, cfg.stride)
+        self.tokenizer = Tokenizer(cfg.d_in, cfg.context, cfg.context_mode, cfg.stride, cfg.token_dtype)
         d_tok = self.tokenizer.d_tok
 
         # ---- fast programmer -------------------------------------------------
+        # Optional smooth read-out for multi-step forecasts: the decoder emits
+        # ``out_basis`` coefficients of a fixed DCT-II basis over the horizon
+        # instead of one free value per step (fewer parameters, no step-to-step
+        # jitter in the forecast).
+        dec_out = cfg.d_out
+        if cfg.out_basis:
+            n = torch.arange(cfg.d_out, dtype=torch.float32) + 0.5
+            k = torch.arange(cfg.out_basis, dtype=torch.float32)
+            basis = torch.cos(math.pi * n[:, None] * k[None, :] / cfg.d_out)
+            basis[:, 1:] *= math.sqrt(2.0)  # unit RMS per mode
+            self.register_buffer("basis", basis / math.sqrt(cfg.out_basis))
+            dec_out = cfg.out_basis
         if cfg.fast == "hqkan":
             self.fast_enc = nn.Linear(d_tok, cfg.fast_in)
-            self.fast_dec = nn.Linear(cfg.fast_out, cfg.d_out)
+            self.fast_dec = nn.Linear(cfg.fast_out, dec_out)
             self.n_fast = theta_size(cfg.fast_in, cfg.fast_out, cfg.fast_reps)
             self.n_slow_out = self.n_fast
             shape = (cfg.fast_out, cfg.fast_in, cfg.fast_reps + 1, 2)
@@ -228,7 +258,7 @@ class GatedFWP(nn.Module):
             layer = (idx[:, :, None, None] * (cfg.fast_reps + 1) + torch.arange(cfg.fast_reps + 1)[:, None]).expand(shape)
         elif cfg.fast == "linear":
             # y = tok @ W + b, dW = L (x) D (rank one), db = B   (paper Sec. 4.2)
-            self.fast_dec = nn.Linear(cfg.fast_out, cfg.d_out)
+            self.fast_dec = nn.Linear(cfg.fast_out, dec_out)
             self.n_fast = d_tok * cfg.fast_out + cfg.fast_out
             self.n_slow_out = d_tok + 2 * cfg.fast_out
             w_idx = torch.arange(d_tok * cfg.fast_out).reshape(d_tok, cfg.fast_out)
@@ -239,6 +269,15 @@ class GatedFWP(nn.Module):
             layer = edge
         else:
             raise ValueError(cfg.fast)
+
+        if cfg.skip == "cycle":
+            # Seasonal residual read-out: the forecast starts as the (smoothed)
+            # last ``d_out`` inputs, so the decoder starts at zero and the
+            # programmers only have to learn the correction to "repeat the
+            # previous cycle".
+            assert cfg.d_in == 1, "the cycle anchor is implemented for scalar series"
+            nn.init.zeros_(self.fast_dec.weight)
+            nn.init.zeros_(self.fast_dec.bias)
 
         # ---- gate groups -----------------------------------------------------
         if cfg.gate == "none":
@@ -306,13 +345,15 @@ class GatedFWP(nn.Module):
         return raw, (gate if self.n_gates else None)
 
     def fast_weights(self, tok: torch.Tensor) -> torch.Tensor:
-        """Fast weights seen by the last token: built from tokens ``1..T-1``."""
-        if tok.shape[1] == 1:
+        """Fast weights seen by the last token: built from tokens ``1..T-1``
+        (paper), or from ``1..T`` when ``write_first`` is set."""
+        hist = tok if self.cfg.write_first else tok[:, :-1]
+        if hist.shape[1] == 0:
             return tok.new_zeros(tok.shape[0], self.n_fast)
         if self.cfg.fast == "linear":
-            proposals, gate = self.split_slow(self.slow(tok[:, :-1]))
+            proposals, gate = self.split_slow(self.slow(hist))
             return gated_aggregate(proposals, gate, None, self.group_index)
-        return self._fast_weights_latent(tok[:, :-1])
+        return self._fast_weights_latent(hist)
 
     def _slow_features(self, tok: torch.Tensor) -> torch.Tensor:
         """Slow-programmer features of every token.  The slow programmer is a
@@ -353,7 +394,8 @@ class GatedFWP(nn.Module):
             d_tok = tok_last.shape[-1]
             wm = w[:, : d_tok * cfg.fast_out].reshape(-1, d_tok, cfg.fast_out)
             h = torch.einsum("bi,bio->bo", tok_last, wm) + w[:, d_tok * cfg.fast_out :]
-        return self.fast_dec(h)
+        y = self.fast_dec(h)
+        return y @ self.basis.T if cfg.out_basis else y
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """``x``: ``(B, T, d_in)`` -> prediction ``(B, d_out)`` at the last step."""
@@ -361,16 +403,29 @@ class GatedFWP(nn.Module):
         tok = self.tokens(x)
         y = self.read(tok[:, -1], self.fast_weights(tok))
         if cfg.skip == "last":
-            y = y + x[:, -1, : min(cfg.d_in, cfg.d_out)].mean(-1, keepdim=True)
+            y = y + x[:, -1, : min(cfg.d_in, cfg.d_out)].float().mean(-1, keepdim=True)
         elif cfg.skip == "mean":
-            y = y + x[:, -cfg.context :].mean((1, 2))[:, None]
+            y = y + x[:, -cfg.context :].float().mean((1, 2))[:, None]
+        elif cfg.skip == "cycle":
+            y = y + self.cycle_anchor(x)
         return y
+
+    def cycle_anchor(self, x: torch.Tensor) -> torch.Tensor:
+        """The last ``d_out`` inputs after a centred moving average (windows are
+        truncated at the ends of the input, so only observed values are used)."""
+        cfg = self.cfg
+        s = x[..., 0].float()
+        if cfg.skip_smooth > 1:
+            k = cfg.skip_smooth
+            s = F.avg_pool1d(s[:, None], k, stride=1, padding=k // 2, count_include_pad=False)[:, 0]
+        return s[:, -cfg.d_out :]
 
     @torch.no_grad()
     def memory_kernel(self, x: torch.Tensor) -> torch.Tensor:
         """Return ``beta_{k}`` of Eq. 5 for each gate group: ``(B, T-1, K)``."""
         tok = self.tokens(x)
-        _, gate = self.split_slow(self.slow(tok[:, :-1]))
+        hist = tok if self.cfg.write_first else tok[:, :-1]
+        _, gate = self.split_slow(self.slow(hist))
         log_g = F.logsigmoid(gate)
         suffix = log_g.sum(1, keepdim=True) - log_g.cumsum(1)
         return torch.exp(F.logsigmoid(-gate) + suffix)
@@ -381,10 +436,10 @@ class ARHQKAN(nn.Module):
     last token only (same tokenisation and residual read-out as ``GatedFWP``)."""
 
     def __init__(self, context: int, hidden: int, latent: int, reps: int, d_out: int = 1,
-                 skip: str = "none", context_mode: str = "lags"):
+                 skip: str = "none", context_mode: str = "lags", token_dtype: str = "float32"):
         super().__init__()
         self.skip = skip
-        self.tokenizer = Tokenizer(1, context, context_mode)
+        self.tokenizer = Tokenizer(1, context, context_mode, dtype=token_dtype)
         self.net = SlowHQKAN(context, hidden, latent, reps, d_out)
 
     def fit_token_scale(self, x_train):
@@ -394,7 +449,7 @@ class ARHQKAN(nn.Module):
         # only the last ``context`` values matter
         y = self.net(self.tokenizer(x[:, -self.tokenizer.context :])[:, -1])
         if self.skip == "last":
-            y = y + x[:, -1, :1]
+            y = y + x[:, -1, :1].float()
         return y
 
 
@@ -404,10 +459,10 @@ class LSTMBaseline(nn.Module):
     as the extended FWP."""
 
     def __init__(self, hidden: int, d_in: int = 1, d_out: int = 1, context: int = 1,
-                 context_mode: str = "lags", skip: str = "none"):
+                 context_mode: str = "lags", skip: str = "none", token_dtype: str = "float32"):
         super().__init__()
         self.skip = skip
-        self.tokenizer = Tokenizer(d_in, context, context_mode)
+        self.tokenizer = Tokenizer(d_in, context, context_mode, dtype=token_dtype)
         self.lstm = nn.LSTM(self.tokenizer.d_tok, hidden, batch_first=True)
         self.head = nn.Linear(hidden, d_out)
 
@@ -418,7 +473,7 @@ class LSTMBaseline(nn.Module):
         out, _ = self.lstm(self.tokenizer(x))
         y = self.head(out[:, -1])
         if self.skip == "last":
-            y = y + x[:, -1, :1]
+            y = y + x[:, -1, :1].float()
         return y
 
 

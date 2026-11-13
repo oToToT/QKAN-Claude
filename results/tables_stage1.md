@@ -60,11 +60,30 @@
 
 | Dataset | N | GQKAN-FWP, paper protocol | GQKAN-FWP, tuned lr | GQKAN-FWP extended, tuned lr | G-QKANFWP, paper protocol | G-QKANFWP, tuned lr | G-QKANFWP extended, tuned lr |
 |---|---|---|---|---|---|---|---|
+| Bessel J2 | 8 | – | – | – | – | **4.77e-06 ± 2.4e-06** | – |
 | Bessel J2 | 16 | 1.68e-03 ± 1.5e-03 | 6.23e-06 ± 5.6e-06 | **1.10e-07 ± 1.1e-07** | 3.56e-04 ± 4.8e-04 | 2.62e-06 ± 2.8e-07 | 2.47e-07 ± 1.4e-07 |
+| Bessel J2 | 32 | – | – | – | – | **4.10e-06 ± 1.3e-06** | – |
+| Bessel J2 | 64 | – | – | – | – | **1.44e-06 ± 3.1e-07** | – |
+| Damped SHM | 8 | – | – | – | – | **9.08e-06 ± 3.8e-06** | – |
 | Damped SHM | 16 | 1.01e-03 ± 1.2e-03 | 2.71e-06 ± 2.5e-06 | **1.67e-07 ± 1.4e-07** | 5.80e-05 ± 5.3e-05 | 1.00e-05 ± 3.8e-06 | 4.39e-07 ± 2.9e-07 |
+| Damped SHM | 32 | – | – | – | – | **5.49e-06 ± 1.6e-06** | – |
+| Damped SHM | 64 | – | – | – | – | **5.46e-06 ± 1.9e-06** | – |
+| NARMA5 | 8 | – | – | – | – | **1.85e-04 ± 3.6e-05** | – |
 | NARMA5 | 16 | 1.65e-03 ± 7.3e-04 | 3.87e-04 ± 2.0e-04 | 2.85e-05 ± 5.2e-06 | 1.54e-03 ± 7.0e-04 | 1.66e-04 ± 2.3e-05 | **2.67e-05 ± 6.0e-06** |
+| NARMA5 | 32 | – | – | – | – | **1.78e-04 ± 1.7e-05** | – |
+| NARMA5 | 64 | – | – | – | – | **1.42e-04 ± 6.0e-05** | – |
+| NARMA10 | 8 | – | – | – | – | **7.07e-04 ± 9.7e-05** | – |
 | NARMA10 | 16 | 2.53e-03 ± 1.2e-03 | 6.28e-04 ± 1.2e-04 | **5.97e-06 ± 1.3e-06** | 2.01e-03 ± 1.1e-03 | 4.79e-04 ± 9.5e-06 | 6.54e-06 ± 3.2e-06 |
+| NARMA10 | 32 | – | – | – | – | **7.21e-04 ± 4.2e-04** | – |
+| NARMA10 | 64 | – | – | – | – | **5.18e-04 ± 2.4e-05** | – |
+| Delayed quantum control | 8 | – | – | – | – | **5.75e-04 ± 1.3e-04** | – |
 | Delayed quantum control | 16 | 2.53e-02 ± 3.5e-02 | 1.55e-03 ± 2.4e-04 | 3.10e-05 ± 5.1e-06 | 1.63e-03 ± 8.7e-04 | 4.72e-04 ± 6.8e-05 | **2.03e-05 ± 4.4e-06** |
+| Delayed quantum control | 32 | – | – | – | – | **3.15e-04 ± 9.4e-05** | – |
+| Delayed quantum control | 64 | – | – | – | – | **3.15e-04 ± 1.1e-04** | – |
+| Jaynes–Cummings | 8 | – | **5.04e-05 ± 1.1e-05** | – | – | – | – |
+| Jaynes–Cummings | 16 | – | **5.25e-05 ± 2.1e-06** | – | – | – | – |
+| Jaynes–Cummings | 32 | – | **2.02e-05 ± 4.1e-06** | – | – | – | – |
+| Jaynes–Cummings | 64 | – | **2.71e-05 ± 6.1e-06** | – | – | – | – |
 
 ## Solar: validation-period scaled MSE of the selected checkpoint
 
@@ -98,8 +117,8 @@
 
 | Model | Params | Scaled MSE ↓ | PAE ↓ | PTE ↓ | Val. loss ↓ | Seeds |
 |---|---|---|---|---|---|---|
-| GQKAN-QKANFWP baseline (scalar gate) | 12,423 | 0.0175 ± 0.0006 | **76.19 ± 6.64** | **29.13 ± 2.03** | 4.039 ± 0.165 | 5 |
+| GQKAN-QKANFWP baseline (scalar gate) | 12,423 | 0.0172 ± 0.0006 | **68.65 ± 11.49** | **28.13 ± 2.39** | 3.967 ± 0.183 | 8 |
 | + multi-timescale gates (20 groups, chrono init) | 12,632 | **0.0162 ± 0.0010** | 79.85 ± 5.03 | 31.35 ± 0.49 | 3.494 ± 0.191 | 5 |
 
-- + multi-timescale gates (20 groups, chrono init): scaled MSE -7.4% vs baseline, Welch p = 0.0663
+- + multi-timescale gates (20 groups, chrono init): scaled MSE -6.0% vs baseline, Welch p = 0.119
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reproduce every number in REPORT.md.  ~7 CPU-core-hours in total; finished
+# Reproduce every number in REPORT.md.  ~14 CPU-core-hours in total; finished
 # jobs are skipped on rerun.  Run from the repository root.
 set -euo pipefail
 SMALL="bessel shm narma5 narma10 dqc"
@@ -39,5 +39,58 @@ python experiments/run_solar.py --variants base mtg --split 0.6 0.2 0.2 --save-d
     --out results/final_solar_split622.jsonl
 python experiments/run_solar.py --variants base@lr1 mtg@lr1 --save-dir results/solar_preds \
     --out results/final_solar_lr1.jsonl
+
+# ===========================================================================
+# Round 2: fair comparison (QKAN-based, parameter count <= the paper's model,
+# every dataset, every baseline with a validated learning rate)
+# ===========================================================================
+D=results/dev_param_matched.jsonl
+# candidates within the 152-parameter budget (validation split, seeds 100-102)
+python experiments/run_timeseries.py --protocol dev --datasets $SMALL --windows 8 16 64 --seeds 100 101 102 --out $D \
+    --variants base@cos30 skip_dif3@cos30 skip_mtg_dif3@cos30 \
+               pm_diff3_layer_h3l2@cos30 pm_diff4_layer_h3l2@cos30 pm_diff5_layer_h3l2@cos30 pm_diff6_edge_h3l2@cos30 \
+               pm_diff3_edge_h4l2@cos30 pm_diff3_edge_h2l3@cos30 pm_diff5_scalar_h2l3@cos30 pm_diff4_edge_h4l2@cos30 \
+               pm_lags3_layer_h3l2@cos30 pm_lags5_layer_h3l2@cos30 pm_lags8_edge_h3l2@cos30 pm_lags10_layer_h2l2@cos30 \
+               pm_lags6_edge_h3l2@cos30 \
+               pmx_diff3_layer_h3l2@cos30 pmx_diff4_layer_h3l2@cos30 pmx_diff5_layer_h3l2@cos30 pmx_diff6_edge_h3l2@cos30 \
+               pmx_diff8_edge_h3l2@cos30 pmx_diff4_edge_h4l2@cos30 pmx_diff6_layer_h2l2@cos30 pmx_diff5_scalar_h2l3@cos30 \
+               pmx_diff10_layer_h2l2@cos30 pmx_diff12_edge_h2l2@cos30 pmx_diff9_scalar_h3l2@cos30 pmx_diff7_edge_h3l2@cos30 \
+               pmx_diff8_edge_h3l2@cos10 pmx_diff8_edge_h3l2@cos100 \
+               pmx_diff8_edge_h3l2_wf@cos30 pmx_diff8_edge_h3l2_wf@cos10 pmx_diff8_layer_h2l2_wf@cos30 pmx_diff4_layer_h3l2_wf@cos30
+# learning rates of the paper's other QKAN variants and of the controls
+python experiments/run_timeseries.py --protocol dev --datasets $SMALL --windows 16 64 --seeds 100 101 102 --out $D \
+    --variants gqkan_fwp@cos10 gqkan_fwp@cos30 gqkan_fwp@cos100 g_qkanfwp@cos10 g_qkanfwp@cos30 g_qkanfwp@cos100 \
+               ar_hqkan8@cos30 ar_hqkan8@cos100 lstm_ext8@cos30 lstm_ext8@cos100
+python experiments/run_timeseries.py --protocol dev --datasets $SMALL --windows 16 64 --seeds 100 101 102 \
+    --out results/dev_other_lr.jsonl --variants gqkan_fwp@cos300
+python experiments/run_timeseries.py --protocol dev --datasets jc --windows 16 --seeds 100 --out $D \
+    --variants pmx_diff8_edge_h3l2@cos30 pmx_diff8_edge_h3l2@cos10 base@cos10
+python experiments/run_timeseries.py --protocol dev --datasets jc --windows 16 --seeds 100 --out results/dev_other_lr_jc.jsonl \
+    --variants gqkan_fwp@cos30 gqkan_fwp@cos100 g_qkanfwp@cos10 g_qkanfwp@cos30 ar_hqkan8@cos30 ar_hqkan8@cos10
+
+# final numbers: our three QKAN-based models and the two extra tuned baselines on all 24 cells
+P=results/final_timeseries_pm.jsonl
+python experiments/run_timeseries.py --protocol paper --out $P \
+    --variants pmx_diff8_edge_h3l2@cos30 pmx_diff8_edge_h3l2_wf@cos30 ar_hqkan8@cos30
+python experiments/run_timeseries.py --protocol paper --datasets $SMALL --variants gqkan_fwp@cos100 g_qkanfwp@cos30 --out $P
+python experiments/run_timeseries.py --protocol paper --datasets jc --variants gqkan_fwp@cos30 g_qkanfwp@cos10 --out $P
+# ablations and the LSTM control of the final model
+python experiments/run_timeseries.py --protocol paper --datasets $SMALL --windows 16 64 --out $P \
+    --variants pmx_diff8_edge_h3l2_noskip@cos30 pmx_diff1_edge_h3l2@cos30 pmx_diff3_edge_h3l2@cos30 \
+               pm_diff8_edge_h3l2@cos30 pmx_diff8_scalar_h3l2@cos30 lstm_ext8@cos30
+# ten extra seeds for the QKAN-FWP+ vs HQKAN-Delta comparison
+python experiments/run_timeseries.py --protocol paper --datasets $SMALL --windows 16 64 --seeds 5 6 7 8 9 10 11 12 13 14 \
+    --out results/extra_seeds.jsonl --variants ar_hqkan8@cos30 pmx_diff8_edge_h3l2@cos30
+
+# solar: parameter-matched variants (pilot, seeds 100-101), then the final model, its ablations,
+# the paper's learning-rate grid and two more chronological splits
+python experiments/run_solar.py --seeds 100 101 --out results/dev_solar.jsonl \
+    --variants mtg_b24 mtg_y_b24 base_b24 mtg_pm mtg_y_pm mtg_b16 mtg_b40 base_cyc mtg_cyc_pm base_cyc_b24 mtg_cyc_b24
+python experiments/run_solar.py --variants mtg_cyc_pm mtg_pm base_cyc --save-dir results/solar_preds --out results/final_solar_pm.jsonl
+python experiments/run_solar.py --variants mtg_cyc_pm@lr1 mtg_cyc_pm@lr2 base@lr2 --out results/final_solar_pm.jsonl
+python experiments/run_solar.py --variants mtg_cyc_pm --split 0.6 0.2 0.2 --save-dir results/solar_preds_split622 \
+    --out results/final_solar_split622.jsonl
+python experiments/run_solar.py --variants mtg_cyc_pm base --seeds 0 1 2 --split 0.7 0.15 0.15 \
+    --out results/final_solar_split71515.jsonl
 
 python experiments/make_figures.py

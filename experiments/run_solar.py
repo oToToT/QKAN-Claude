@@ -48,6 +48,24 @@ VARIANTS = {
     "mtg_ctx12s12": dict(model={**BASE, **MTG, "context": 12, "stride": 12}),
     "full": dict(model={**BASE, **MTG, "context": 12, "skip": "mean"}, train=dict(schedule="cosine")),
     "full_s12": dict(model={**BASE, **MTG, "context": 12, "stride": 12, "skip": "mean"}, train=dict(schedule="cosine")),
+    # ---- parameter-matched variants (<= the 12,423-parameter baseline) -------
+    # (a) pay for the gates by narrowing the slow latent 10 -> 9
+    "mtg_pm": dict(model={**BASE, **MTG, "slow_latent": 9}),
+    "mtg_y_pm": dict(model={**BASE, **MTG, "context": 12, "stride": 12, "slow_latent": 9}),
+    # (b) smooth read-out: 132 free outputs -> K cosine modes over the horizon
+    "base_b16": dict(model={**BASE, "out_basis": 16}),
+    "base_b24": dict(model={**BASE, "out_basis": 24}),
+    "mtg_b16": dict(model={**BASE, **MTG, "out_basis": 16}),
+    "mtg_b24": dict(model={**BASE, **MTG, "out_basis": 24}),
+    "mtg_b40": dict(model={**BASE, **MTG, "out_basis": 40}),
+    "mtg_y_b16": dict(model={**BASE, **MTG, "context": 12, "stride": 12, "out_basis": 16}),
+    "mtg_y_b24": dict(model={**BASE, **MTG, "context": 12, "stride": 12, "out_basis": 24}),
+    "mtg_y_b40": dict(model={**BASE, **MTG, "context": 12, "stride": 12, "out_basis": 40}),
+    # (c) seasonal residual read-out: forecast = smoothed last cycle + learned correction
+    "base_cyc": dict(model={**BASE, "skip": "cycle"}),
+    "base_cyc_b24": dict(model={**BASE, "skip": "cycle", "out_basis": 24}),
+    "mtg_cyc_pm": dict(model={**BASE, **MTG, "slow_latent": 9, "skip": "cycle"}),
+    "mtg_cyc_b24": dict(model={**BASE, **MTG, "skip": "cycle", "out_basis": 24}),
     # LSTM-S of the paper: LSTM(64) -> BatchNorm -> Dropout(0.3) -> Linear, 25,860 parameters
     "lstm_s": dict(kind="lstm", model=dict(hidden=64)),
 }

@@ -7,14 +7,22 @@
 
 ## 主要結果
 
-| | 重現的 baseline | 改進後 | 變化 |
-|---|---|---|---|
-| Time-series（6 個 dataset × 4 個 window，test MSE 幾何平均），baseline 用論文協定 | 1 | 0.0025 | 低 408 倍，24/24 格 |
-| 同上，baseline 也用調好的 learning rate | 1 | 0.021 | 低 48 倍，24/24 格 |
-| Solar cycle scaled MSE（論文 split，5 seeds） | 0.0184 ± 0.0005 | 0.0135 ± 0.0013 | −27%（p < 0.001）；60/20/20 split 上只有 −7% |
+比較規則：方法必須是 QKAN-based、參數量不超過論文的模型、論文用到的每個 dataset 都比、每個 baseline 都調過
+learning rate。
 
-改進內容：調 learning rate（cosine）、residual 讀出、Δ-token `(x_t, Δx_t, Δ²x_t)`、多時間尺度（分組）gate。
-同大小的 LSTM 套用相同的 residual＋Δ-token 後表現與改進後的 FWP 相當——詳見 REPORT 4.3 節。
+| 我們的模型 | 參數量（論文） | 結果（5 seeds） |
+|---|---|---|
+| **HQKAN-Δ**：靜態 HQKAN ＋ Δ-token ＋ residual 讀出 | 136（159） | 6 個 time-series dataset × 4 個 window 共 24 格，全部贏過每個 baseline；test MSE 幾何平均比調過 lr 的 baseline 低 129–290 倍 |
+| **QKAN-FWP+**：保留論文的 gated fast-weight 架構 | 149（159） | 24/24 格贏過論文主力模型 GQKAN-QKANFWP（比調過 lr 的版本低 45 倍）；和三個 baseline 中最好的相比贏 21/24 格 |
+| **QKAN-FWP+（太陽黑子）**：多時間尺度 gate ＋ last-cycle residual 讀出 | 11,732（12,474） | 論文的 split：MSE 0.0184 → 0.0134、PAE 45.2 → 37.8、PTE 29.8 → 17.5 |
+
+兩個要一起看的保留：
+
+- 在六個 time-series 上，沒有 fast weights 的 HQKAN-Δ 比 QKAN-FWP+ 好 2.5 倍（15 seeds）——這組 benchmark 不需要長期記憶。
+- 太陽黑子：零參數的「重複上一個週期」就有 0.0156 / 35.9 / 16.2，已優於論文印出的 0.0168 / 39.59 / 21.89；
+  我們的模型在 validation 期間比 baseline 差，換 split 後 MSE 的優勢也會消失。
+
+沒有做：MiniGrid RL（論文 Sec. 6.3）與真機實驗。
 
 ![time-series main](figures/timeseries_main.png)
 
@@ -24,11 +32,11 @@
 |---|---|
 | `REPORT.md` | 論文分析、改進方向（含近期文獻）、實驗結果與結論 |
 | `qkanfwp/daruan.py` | DARUAN / QKAN layer 的函數式實作（支援每個樣本各自的 fast 角度），與官方 `qkan` 套件數值一致 |
-| `qkanfwp/models.py` | Gated fast-weight programmer（論文 Eq. 3–4）與本 repo 的擴充：residual 讀出、差分 token、多時間尺度 gate、chrono 初始化 |
+| `qkanfwp/models.py` | Gated fast-weight programmer（論文 Eq. 3–4）與本 repo 的擴充：residual 讀出（last value / last cycle）、差分 token、多時間尺度 gate、chrono 初始化、write-first；以及靜態的 HQKAN-Δ |
 | `qkanfwp/data.py` | Bessel、Damped SHM、NARMA5/10、Delayed Quantum Control、Jaynes–Cummings、SILSO 太陽黑子 |
 | `experiments/run_timeseries.py` | 一步預測 benchmark（論文 Sec. 6.1） |
 | `experiments/run_solar.py` | 太陽黑子週期 direct multi-step 預測（論文 Sec. 6.2） |
-| `experiments/make_figures.py` | 由 `results/*.jsonl` 產生 `figures/` 與 `results/tables.md` |
+| `experiments/make_figures.py` | 由 `results/*.jsonl` 產生 `figures/`、`results/tables_final.md`、`results/tables_stage1.md` |
 | `experiments/run_all.sh` | 重現所有數字的完整指令 |
 | `results/` | 所有 run 的原始結果（JSON lines） |
 | `tests/` | 單元測試（DARUAN 與官方 solver 等價、closed-form memory kernel 與逐步遞迴等價、有界性…） |
@@ -39,12 +47,12 @@
 pip install -r requirements.txt
 python -m pytest tests -q
 
-# 單一比較：baseline vs 改進版，NARMA10、window 16、5 seeds
+# 單一比較：baseline（論文協定 / 調過 lr）vs QKAN-FWP+ vs HQKAN-Δ，NARMA10、window 16、5 seeds
 python experiments/run_timeseries.py --datasets narma10 --windows 16 \
-    --variants base base@cos30 skip_dif3@cos30 --out results/quick.jsonl
+    --variants base base@cos30 pmx_diff8_edge_h3l2@cos30 ar_hqkan8@cos30 --out results/quick.jsonl
 python experiments/aggregate.py results/quick.jsonl
 
-# 全部重現（約 7 CPU core-hours，可中斷續跑）
+# 全部重現（約 14 CPU core-hours，可中斷續跑）
 bash experiments/run_all.sh
 ```
 

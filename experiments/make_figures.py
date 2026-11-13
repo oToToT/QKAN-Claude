@@ -65,8 +65,9 @@ def fig_base_vs_ext(c, series, path):
     for ax in axes[:, 0]:
         ax.set_ylabel("test MSE (log scale)")
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=len(series), bbox_to_anchor=(0.5, 1.0))
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    rows_ = 1 if len(series) <= 4 else 2  # wrap long legends instead of clipping them
+    fig.legend(handles, labels, loc="upper center", ncol=-(-len(series) // rows_), bbox_to_anchor=(0.5, 1.0))
+    fig.tight_layout(rect=(0, 0, 1, 0.94 if rows_ == 1 else 0.90))
     fig.savefig(path, dpi=200)
     plt.close(fig)
 
@@ -278,7 +279,7 @@ def fig_memory_kernel(path, base="base", multi="mtg", pred_dir=RES / "solar_pred
     for j, g in enumerate(order[idx]):
         mean_age = (km[:, g] * age).sum() / km[:, g].sum()
         axes[1].plot(age, km[:, g], color=SEQ[1 + j], label=f"mean age {mean_age:.0f} mo")
-    axes[1].set_title("Multi-timescale gates: 5 of 20 gate groups")
+    axes[1].set_title(f"Multi-timescale gates: 5 of {km.shape[1]} gate groups")
     axes[1].legend(fontsize=8.5, title="gate group", title_fontsize=8.5, loc="lower left", ncol=2)
     for ax in axes:
         ax.set_xscale("log")
@@ -361,7 +362,7 @@ def main():
         fig_base_vs_ext(c, [("base", INK2, "Baseline, paper protocol", "s"), ("base_tuned", BLUE, "Baseline, tuned lr", "o"),
                             ("skip_dif3@cos30", ORANGE, "Extended, tuned lr", "D"),
                             ("skip_mtg_dif3@cos30", AQUA, "Extended + multi-timescale gates", "^")],
-                        FIG / "timeseries_main.png")
+                        FIG / "stage1_main.png")
         out += ["## Time series: main comparison (test MSE, mean ± std over 5 seeds)\n",
                 table_cells(c, main_v, TableNames()), ""]
         groups = [
@@ -373,7 +374,7 @@ def main():
         abl = [v for _, vs in groups for v in vs if any(k[2] == v for k in c)]
         # restrict the ablation to the cells every ablation variant was run on
         sub = {k: v for k, v in c.items() if k[0] != "jc" and k[1] in (16, 64)}
-        fig_ablation(sub, groups, NAMES, FIG / "timeseries_ablation.png",
+        fig_ablation(sub, groups, NAMES, FIG / "stage1_ablation.png",
                      "Ablation: test MSE relative to the paper-protocol baseline")
         abl_names = TableNames()
         out += ["## Time series: ablation (5 series × N ∈ {16, 64}; ratio of seed-mean test MSE to the paper-protocol baseline)\n",
@@ -422,15 +423,294 @@ def main():
                         a = np.array([r["test"]["mse"] for r in by622[v]])
                         out.append(f"- {SOLAR_NAMES[v]}: scaled MSE {a.mean() / b.mean() - 1:+.1%} vs baseline, Welch p = {welch_p(a, b):.3g}")
                 out.append("")
-        fig_solar_forecast(by, [("base", BLUE, "Baseline (scalar gate)"), ("mtg", ORANGE, "Multi-timescale gates")],
-                           FIG / "solar_forecast.png")
-        fig_memory_kernel(FIG / "solar_memory_kernel.png")
         pair = [("base", BLUE, "Baseline (scalar gate)"), ("mtg", ORANGE, "Multi-timescale gates")]
+        fig_solar_forecast(by, pair, FIG / "stage1_solar_forecast.png")
+        fig_memory_kernel(FIG / "stage1_solar_memory_kernel.png")
+        fig_solar_error_by_start(pair, FIG / "stage1_solar_error_by_start.png")
+        fig_solar_error_by_start(pair, FIG / "stage1_solar_error_by_start_split622.png", RES / "solar_preds_split622")
+    (RES / "tables_stage1.md").write_text("\n".join(out) + "\n")
+
+
+# ===========================================================================
+# Final, parameter-matched comparison
+# ===========================================================================
+OURS = "pmx_diff8_edge_h3l2@cos30"  # improved gated QKAN-FWP (paper's read-before-write order)
+OURS_WF = "pmx_diff8_edge_h3l2_wf@cos30"  # same, write-then-read
+STATIC = "ar_hqkan8@cos30"  # static HQKAN on the last token (no fast weights)
+SOLAR_OURS = "mtg_cyc_pm"
+
+# Test MSE reported in the paper (Tables 4-6): its GQKAN-QKANFWP, and the best
+# of the four models it lists for that cell.
+PAPER = {
+    "bessel": dict(own=[2.5e-5, 1.1e-5, 1.5e-5, 2.1e-5], best=[2.5e-5, 1.1e-5, 1.5e-5, 2.1e-5]),
+    "shm": dict(own=[8.9e-5, 3.6e-5, 1.9e-5, 4.3e-5], best=[8.9e-5, 3.6e-5, 1.9e-5, 4.3e-5]),
+    "narma5": dict(own=[2.0e-5, 2.8e-5, 4.8e-5, 8.7e-5], best=[5e-6, 1.2e-5, 1.1e-5, 1.0e-5]),
+    "narma10": dict(own=[1.00e-4, 5.2e-5, 5.5e-5, 1.08e-4], best=[4.3e-5, 2e-6, 1.6e-5, 2.0e-5]),
+    "dqc": dict(own=[4.8e-5, 4.1e-5, 8.9e-5, 2.21e-4], best=[3.3e-5, 4.1e-5, 5.3e-5, 1.17e-4]),
+    "jc": dict(own=[2.01e-4, 1.59e-4, 1.96e-4, 3.22e-4], best=[9.2e-5, 7.0e-5, 1.96e-4, 3.7e-5]),
+}
+PAPER_SOLAR = dict(params=12474, mse=(0.0168, 0.0016), pae=(39.59, 2.82), pte=(21.89, 1.57))
+
+FINAL_NAMES = {
+    "base": "Baseline GQKAN-QKANFWP, paper protocol",
+    "base_tuned": "Baseline GQKAN-QKANFWP, tuned lr",
+    "gqkan_fwp_tuned": "GQKAN-FWP, tuned lr",
+    "g_qkanfwp_tuned": "G-QKANFWP, tuned lr",
+    OURS: "QKAN-FWP+ (ours)",
+    OURS_WF: "QKAN-FWP+ write-first (ours)",
+    STATIC: "HQKAN-Δ, no fast weights (ours)",
+    "pmx_diff8_edge_h3l2_noskip@cos30": "Ours without residual read-out",
+    "pmx_diff8_scalar_h3l2@cos30": "Ours with the paper's scalar gate",
+    "pm_diff8_edge_h3l2@cos30": "Ours with float32 differences",
+    "pmx_diff3_edge_h3l2@cos30": "Ours with 3-dim instead of 8-dim Δ-tokens",
+    "pmx_diff1_edge_h3l2@cos30": "Ours without Δ-tokens (scalar input)",
+    "ar_hqkan8": "HQKAN-Δ: no fast weights (static HQKAN, same tokens)",
+    "lstm_ext8": "LSTM with the same tokens and residual (not QKAN)",
+}
+
+
+def ratio_stats(c, v, ref):
+    r, wins, n = geo_ratio(c, v, ref)
+    rat = [np.mean(list(c[(d, w, v)].values())) / np.mean(list(c[(d, w, ref)].values()))
+           for (d, w, vv) in c if vv == v and (d, w, ref) in c]
+    return r, wins, n, (min(rat), max(rat)) if rat else (np.nan, np.nan)
+
+
+def solar_eval_anchor(split):
+    """Metrics of the zero-parameter seasonal-naive anchor (the untrained
+    ``skip='cycle'`` model): repeat the last 132 months, 13-month smoothed."""
+    import torch
+
+    from experiments.run_solar import HORIZON, VARIANTS, WINDOW, build
+    from qkanfwp import data
+
+    raw, scaled, (lo, hi) = data.load_sunspots()
+    x, y = data.make_windows(scaled, WINDOW, HORIZON)
+    x, y = torch.tensor(x), torch.tensor(y)
+    parts = data.chrono_split(len(x), split)
+    model = build(VARIANTS[SOLAR_OURS])
+    out = {}
+    with torch.no_grad():
+        for name, idx in zip(("val", "test"), parts[1:]):
+            pred = model.cycle_anchor(x[idx])
+            tgt = y[idx]
+            out[name] = dict(
+                mse=((pred - tgt) ** 2).mean().item(),
+                pae=((tgt.max(1).values - pred.max(1).values).abs() * (hi - lo)).mean().item(),
+                pte=(tgt.argmax(1) - pred.argmax(1)).abs().float().mean().item(),
+            )
+    return out
+
+
+def final_report():
+    out = []
+    rows = load(sorted(RES.glob("final_timeseries*.jsonl")), protocol="paper")
+    c = cells(rows)
+    params = {r["variant"]: r["params"] for r in rows}
+    # each baseline with its validated learning rate
+    for (d, w, v), vals in list(c.items()):
+        if (v == "base@cos10" and d == "jc") or (v == "base@cos30" and d != "jc"):
+            c[(d, w, "base_tuned")] = vals
+    params["base_tuned"] = params["base"]
+    # the paper's other QKAN variants, each with its validated learning rate
+    tuned = {"gqkan_fwp_tuned": {"jc": "gqkan_fwp@cos30", "default": "gqkan_fwp@cos100"},
+             "g_qkanfwp_tuned": {"jc": "g_qkanfwp@cos10", "default": "g_qkanfwp@cos30"}}
+    for name, lr in tuned.items():
+        for (d, w, v), vals in list(c.items()):
+            if v == lr.get(d, lr["default"]):
+                c[(d, w, name)] = vals
+                params[name] = params[v]
+    controls = {}
+    for fam in ("ar_hqkan8", "lstm_ext8"):
+        got = sorted({k[2] for k in c if k[2].startswith(fam + "@")})
+        if got:
+            controls[fam] = got[-1]
+            params[fam] = params[got[-1]]
+            for (d, w, v), vals in list(c.items()):
+                if v == got[-1]:
+                    c[(d, w, fam)] = vals
+    if not any(k[2] == OURS for k in c):
+        return
+    names = dict(FINAL_NAMES)
+    baselines = [v for v in ("base", "base_tuned", "gqkan_fwp_tuned", "g_qkanfwp_tuned") if any(k[2] == v for k in c)]
+
+    def label(v):
+        return f"{names[v]} ({params[v]} params)"
+
+    ours_all = [v for v in (OURS, OURS_WF, STATIC) if any(k[2] == v and k[1] == 8 for k in c)]
+    out += ["## Final time-series comparison (test MSE, mean ± std over 5 seeds)\n",
+            table_cells(c, baselines + ours_all, {v: label(v) for v in baselines + ours_all}), ""]
+    for ours in ours_all:
+        out += [f"## {names[ours]} ({params[ours]} params) vs each baseline over the 24 cells\n",
+                "| Baseline | Params | Ours ÷ baseline (geo-mean test MSE) | Cells where ours is better | Smallest / largest factor |",
+                "|---|---|---|---|---|"]
+        for b in baselines:
+            r, wins, n, (lo_, hi_) = ratio_stats(c, ours, b)
+            out.append(f"| {names[b]} | {params[b]} | {r:.2g} (**{1 / r:.0f}× lower**) | {wins}/{n} | {1 / hi_:.1f}× / {1 / lo_:.0f}× |")
+        # best baseline in each cell (the hardest comparison)
+        best_wins = n_cells = 0
+        for d in DATASETS:
+            for w in WINDOWS:
+                if (d, w, ours) not in c:
+                    continue
+                bb = min(np.mean(list(c[(d, w, b)].values())) for b in baselines if (d, w, b) in c)
+                n_cells += 1
+                best_wins += np.mean(list(c[(d, w, ours)].values())) < bb
+        out += ["", f"Better than the best of all re-implemented baselines in {best_wins}/{n_cells} cells.", ""]
+
+    # per-dataset summary: geometric mean over the four windows of the seed-mean test MSE
+    def gm(d, v):
+        vals = [np.mean(list(c[(d, w, v)].values())) for w in WINDOWS if (d, w, v) in c]
+        return float(np.exp(np.mean(np.log(vals)))) if len(vals) == len(WINDOWS) else float("nan")
+
+    tuned_b = [b for b in baselines if b != "base"]
+    head = [o for o in (OURS, STATIC) if o in ours_all]  # the two headline models
+    short = {OURS: "QKAN-FWP+", STATIC: "HQKAN-Δ"}
+    out += ["## Per-dataset summary (geometric mean over N ∈ {8, 16, 32, 64} of the seed-mean test MSE)\n",
+            "| Dataset | Baseline, paper protocol | Best tuned baseline | " + " | ".join(f"{short[o]} ({params[o]} params)" for o in head)
+            + " | " + " | ".join(f"{short[o]} vs best tuned baseline" for o in head) + " |",
+            "|---|---|---|" + "---|" * (2 * len(head))]
+    for d in DATASETS:
+        bb = min(gm(d, b) for b in tuned_b)
+        row = f"| {TITLES[d]} | {gm(d, 'base'):.2e} | {bb:.2e} | " + " | ".join(f"{gm(d, o):.2e}" for o in head)
+        row += " | " + " | ".join(f"{bb / gm(d, o):.0f}× lower" if gm(d, o) < bb else f"{gm(d, o) / bb:.1f}× higher" for o in head) + " |"
+        out.append(row)
+    out.append("")
+
+    out += ["## Ours vs the numbers printed in the paper (Tables 4–6)\n",
+            "| Dataset | N | Paper: GQKAN-QKANFWP | Paper: best of its models | " + " | ".join(names[o] for o in ours_all) + " |",
+            "|---|---|---|---|" + "---|" * len(ours_all)]
+    tally = {o: [0, 0, 0] for o in ours_all}
+    for d in DATASETS:
+        for i, w in enumerate(WINDOWS):
+            own, best = PAPER[d]["own"][i], PAPER[d]["best"][i]
+            cols = []
+            for o in ours_all:
+                if (d, w, o) not in c:
+                    cols.append("–")
+                    continue
+                m, sd = mean_std(c[(d, w, o)])
+                tally[o][0] += 1
+                tally[o][1] += m < own
+                tally[o][2] += m < best
+                txt = f"{m:.2e} ± {sd:.1e}"
+                cols.append(f"**{txt}**" if m < best else txt)
+            out.append(f"| {TITLES[d]} | {w} | {own:.1e} | {best:.1e} | " + " | ".join(cols) + " |")
+    out.append("")
+    for o in ours_all:
+        n_all, n_own, n_best = tally[o]
+        out.append(f"- {names[o]}: below the paper's GQKAN-QKANFWP number in {n_own}/{n_all} cells, below the paper's best number in {n_best}/{n_all} cells (bold).")
+    out.append("")
+
+    abl = [OURS, OURS_WF, "pmx_diff8_edge_h3l2_noskip@cos30", "pmx_diff1_edge_h3l2@cos30", "pmx_diff3_edge_h3l2@cos30",
+           "pm_diff8_edge_h3l2@cos30", "pmx_diff8_scalar_h3l2@cos30", "ar_hqkan8", "lstm_ext8"]
+    abl = [v for v in abl if any(k[2] == v for k in c)]
+    sub = {k: v for k, v in c.items() if k[0] != "jc" and k[1] in (16, 64)}
+    groups = [("Re-implemented paper models (tuned learning rate)", [b for b in baselines if b != "base"]),
+              ("QKAN-FWP+ and what each part contributes", [v for v in abl if v not in ("ar_hqkan8", "lstm_ext8")]),
+              ("Without fast weights", [v for v in ("ar_hqkan8", "lstm_ext8") if v in abl])]
+    fig_ablation(sub, groups, {v: f"{names[v]} ({params[v]})" for v in names if v in params}, FIG / "timeseries_ablation.png",
+                 "Final model: test MSE relative to the paper-protocol baseline")
+    out += ["## Final-model ablation (5 series × N ∈ {16, 64}; ratio to the paper-protocol baseline)\n",
+            table_ratio(sub, [b for b in baselines if b != "base"] + abl, {v: names[v] for v in names}, params,
+                        datasets=[d for d in DATASETS if d != "jc"]), ""]
+    series = [("base", INK2, "Baseline, paper protocol", "s"), ("base_tuned", BLUE, "Baseline, tuned lr", "o")]
+    if "gqkan_fwp_tuned" in baselines:
+        series.append(("gqkan_fwp_tuned", AQUA, "GQKAN-FWP, tuned lr", "v"))
+    if "g_qkanfwp_tuned" in baselines:
+        series.append(("g_qkanfwp_tuned", YELLOW, "G-QKANFWP, tuned lr", "^"))
+    series.append((OURS, ORANGE, f"QKAN-FWP+ ({params[OURS]} params)", "D"))
+    if STATIC in ours_all:
+        series.append((STATIC, "#e87ba4", f"HQKAN-Δ ({params[STATIC]} params)", "P"))
+    fig_base_vs_ext(c, series, FIG / "timeseries_main.png")
+
+    # ---------------- solar ----------------
+    by, by622, by715 = {}, {}, {}
+    for f in sorted(RES.glob("final_solar*.jsonl")):
+        for k, v in solar_rows(f).items():
+            for r in v:
+                split = tuple(r.get("split") or (0.8, 0.1, 0.1))
+                {(0.8, 0.1, 0.1): by, (0.6, 0.2, 0.2): by622, (0.7, 0.15, 0.15): by715}[split].setdefault(k, []).append(r)
+    if SOLAR_OURS in by:
+        snames = {"base": "Baseline GQKAN-QKANFWP (scalar gate)", SOLAR_OURS: "Ours: multi-timescale gates + last-cycle residual read-out",
+                  "mtg_pm": "Ours without the last-cycle read-out (gates only)", "base_cyc": "Ours without multi-timescale gates (read-out only)",
+                  "base@lr1": "Baseline, lr 1e-3", "base@lr2": "Baseline, lr 2e-3",
+                  SOLAR_OURS + "@lr1": "Ours, lr 1e-3", SOLAR_OURS + "@lr2": "Ours, lr 2e-3"}
+
+        def srow(name, params_, m, extra=""):
+            return f"| {name} | {params_} | {m['mse']} | {m['pae']} | {m['pte']} | {extra} |"
+
+        def fmt(rs, part="test"):
+            f = lambda k, p: "{:.{p}f} ± {:.{p}f}".format(np.mean([r[part][k] for r in rs]), np.std([r[part][k] for r in rs]), p=p)  # noqa: E731
+            return dict(mse=f("mse", 4), pae=f("pae", 1), pte=f("pte", 1))
+
+        anchor = solar_eval_anchor((0.8, 0.1, 0.1))
+        out += ["## Solar cycle: final comparison (paper split and protocol, lr 2.5e-3, 5 seeds, test metrics)\n",
+                "| Model | Params | Scaled MSE ↓ | PAE ↓ | PTE ↓ | Val. loss |", "|---|---|---|---|---|---|"]
+        for v in ["base", SOLAR_OURS, "mtg_pm", "base_cyc"]:
+            if v in by:
+                vl = np.array([r["val"]["loss"] for r in by[v]])
+                out.append(srow(snames[v], f"{by[v][0]['params']:,}", fmt(by[v]), f"{vl.mean():.2f} ± {vl.std():.2f}"))
+        a = anchor["test"]
+        out.append(f"| *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | {a['mse']:.4f} | {a['pae']:.1f} | {a['pte']:.1f} | – |")
+        ps = PAPER_SOLAR
+        out.append(f"| *Paper's reported GQKAN-QKANFWP* | {ps['params']:,} | {ps['mse'][0]:.4f} ± {ps['mse'][1]:.4f} | {ps['pae'][0]:.2f} ± {ps['pae'][1]:.2f} | {ps['pte'][0]:.2f} ± {ps['pte'][1]:.2f} | – |")
+        out.append("")
+        b = by["base"]
+        for k in ("mse", "pae", "pte"):
+            x_, y_ = np.array([r["test"][k] for r in by[SOLAR_OURS]]), np.array([r["test"][k] for r in b])
+            out.append(f"- Ours vs baseline, {k.upper()}: {x_.mean() / y_.mean() - 1:+.1%} (Welch p = {welch_p(x_, y_):.2g})")
+        out.append("")
+
+        out += ["## Solar cycle: the paper's learning-rate grid (5 seeds each)\n",
+                "| Model | lr | Val. loss (selection criterion) | Scaled MSE | PAE | PTE |", "|---|---|---|---|---|---|"]
+        for fam, tag in (("base", "Baseline"), (SOLAR_OURS, "Ours")):
+            grid = [(lr, v) for lr, v in (("1e-3", fam + "@lr1"), ("2e-3", fam + "@lr2"), ("2.5e-3", fam)) if v in by]
+            best = min(grid, key=lambda g: np.mean([r["val"]["loss"] for r in by[g[1]]]))[1] if grid else None
+            for lr, v in grid:
+                m = fmt(by[v])
+                vl = np.mean([r["val"]["loss"] for r in by[v]])
+                mark = " ← selected" if v == best else ""
+                out.append(f"| {tag} | {lr} | {vl:.3f}{mark} | {m['mse']} | {m['pae']} | {m['pte']} |")
+        out.append("")
+
+        if SOLAR_OURS in by622 and "base" in by622:
+            anchor2 = solar_eval_anchor((0.6, 0.2, 0.2))["test"]
+            out += ["## Solar cycle: second split (60/20/20, test targets 1971–2026, five cycles)\n",
+                    "| Model | Params | Scaled MSE ↓ | PAE ↓ | PTE ↓ | Val. loss |", "|---|---|---|---|---|---|"]
+            for v in ["base", SOLAR_OURS, "mtg"]:
+                if v in by622:
+                    vl = np.array([r["val"]["loss"] for r in by622[v]])
+                    nm = snames.get(v, "Multi-timescale gates only (12,632-parameter version)")
+                    out.append(srow(nm, f"{by622[v][0]['params']:,}", fmt(by622[v]), f"{vl.mean():.2f} ± {vl.std():.2f}"))
+            out.append(f"| *Reference: repeat the last cycle, 13-month smoothed* | 0 | {anchor2['mse']:.4f} | {anchor2['pae']:.1f} | {anchor2['pte']:.1f} | – |")
+            out.append("")
+            for k in ("mse", "pae", "pte"):
+                x_, y_ = np.array([r["test"][k] for r in by622[SOLAR_OURS]]), np.array([r["test"][k] for r in by622["base"]])
+                out.append(f"- Ours vs baseline, {k.upper()}: {x_.mean() / y_.mean() - 1:+.1%} (Welch p = {welch_p(x_, y_):.2g})")
+            out.append("")
+        if SOLAR_OURS in by715 and "base" in by715:
+            anchor3 = solar_eval_anchor((0.7, 0.15, 0.15))["test"]
+            out += ["## Solar cycle: third split (70/15/15, test targets 1982–2026, four cycles; 3 seeds)\n",
+                    "| Model | Params | Scaled MSE ↓ | PAE ↓ | PTE ↓ | Val. loss |", "|---|---|---|---|---|---|"]
+            for v in ["base", SOLAR_OURS]:
+                vl = np.array([r["val"]["loss"] for r in by715[v]])
+                out.append(srow(snames[v], f"{by715[v][0]['params']:,}", fmt(by715[v]), f"{vl.mean():.2f} ± {vl.std():.2f}"))
+            out.append(f"| *Reference: repeat the last cycle, 13-month smoothed* | 0 | {anchor3['mse']:.4f} | {anchor3['pae']:.1f} | {anchor3['pte']:.1f} | – |")
+            out.append("")
+            for k in ("mse", "pae", "pte"):
+                x_, y_ = np.array([r["test"][k] for r in by715[SOLAR_OURS]]), np.array([r["test"][k] for r in by715["base"]])
+                out.append(f"- Ours vs baseline, {k.upper()}: {x_.mean() / y_.mean() - 1:+.1%} (Welch p = {welch_p(x_, y_):.2g})")
+            out.append("")
+        pair = [("base", BLUE, "Baseline (scalar gate)"), (SOLAR_OURS, ORANGE, "Ours")]
+        fig_solar_forecast(by, pair, FIG / "solar_forecast.png")
+        fig_memory_kernel(FIG / "solar_memory_kernel.png", multi=SOLAR_OURS)
         fig_solar_error_by_start(pair, FIG / "solar_error_by_start.png")
         fig_solar_error_by_start(pair, FIG / "solar_error_by_start_split622.png", RES / "solar_preds_split622")
-    (RES / "tables.md").write_text("\n".join(out) + "\n")
+    (RES / "tables_final.md").write_text("\n".join(out) + "\n")
     print("\n".join(out))
 
 
 if __name__ == "__main__":
     main()
+    final_report()

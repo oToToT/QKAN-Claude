@@ -126,11 +126,11 @@ GENERATORS = {
 }
 
 
-def load_series(name: str) -> np.ndarray:
+def load_series(name: str, dtype=np.float32) -> np.ndarray:
     """Return the series min-max normalised to [-1, 1] as in the paper."""
     s = np.asarray(GENERATORS[name](), dtype=np.float64)
     lo, hi = s.min(), s.max()
-    return (2.0 * (s - lo) / (hi - lo) - 1.0).astype(np.float32)
+    return (2.0 * (s - lo) / (hi - lo) - 1.0).astype(dtype)
 
 
 def make_windows(series: np.ndarray, window: int, horizon: int = 1):

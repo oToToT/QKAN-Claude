@@ -138,3 +138,76 @@ def test_difference_tokens():
     std = model.tokens(x).reshape(-1, 3).std(0)
     assert torch.allclose(std[1:], torch.ones(2), atol=1e-5)
     model(x).sum().backward()
+
+
+def test_smooth_output_basis():
+    torch.manual_seed(0)
+    cfg = FWPConfig(d_out=132, fast_in=4, fast_out=5, fast_reps=1, out_basis=12)
+    model = GatedFWP(cfg)
+    assert model.fast_dec.out_features == 12
+    assert model.basis.shape == (132, 12)
+    # modes are orthogonal with equal norm, so the decoder is well conditioned
+    gram = model.basis.T @ model.basis
+    assert torch.allclose(gram, torch.eye(12) * gram[0, 0], atol=1e-3)
+    y = model(torch.randn(3, 20, 1))
+    assert y.shape == (3, 132)
+    # 12 modes cannot produce month-to-month jitter: the forecast is band-limited
+    spectrum = torch.fft.rfft(y - y.mean(1, keepdim=True), dim=1).abs()
+    assert spectrum[:, 40:].max() < 0.05 * spectrum.max()
+    y.sum().backward()
+
+
+def test_float64_tokens_remove_rounding_noise():
+    """6th-order differences of a smooth series are mostly rounding noise in
+    float32; forming them in float64 recovers the true signal."""
+    import numpy as np
+    from qkanfwp import data
+    from qkanfwp.models import Tokenizer
+
+    s64 = data.load_series("bessel", dtype=np.float64)
+    x64 = torch.tensor(s64)[None, :, None]
+    exact = np.diff(s64, 6)
+    for dtype, tol in (("float32", None), ("float64", 1e-4)):
+        tok = Tokenizer(1, 7, "diff", dtype=dtype)
+        d6 = tok(x64 if dtype == "float64" else x64.float())[0, 6:, 6].double().numpy()
+        err = np.std(d6 - exact) / np.std(exact)
+        if tol is None:
+            assert err > 0.3  # float32: noise dominated
+        else:
+            assert err < tol
+    assert tok(x64).dtype == torch.float32
+
+
+def test_cycle_anchor_read_out():
+    torch.manual_seed(0)
+    cfg = FWPConfig(d_out=24, fast_in=3, fast_out=4, fast_reps=1, skip="cycle", skip_smooth=5)
+    model = GatedFWP(cfg)
+    x = torch.randn(2, 60, 1)
+    y = model(x)
+    # zero-initialised decoder: the untrained model is exactly the seasonal-naive forecast
+    anchor = model.cycle_anchor(x)
+    assert torch.allclose(y, anchor)
+    # interior points are a centred 5-point average of the last 24 inputs
+    s = x[..., 0]
+    k = 60 - 24 + 10
+    assert torch.allclose(anchor[:, 10], s[:, k - 2 : k + 3].mean(1), atol=1e-6)
+    # the last point only averages observed values (no look-ahead)
+    assert torch.allclose(anchor[:, -1], s[:, -3:].mean(1), atol=1e-6)
+    y.sum().backward()
+    assert model.fast_dec.weight.grad.abs().sum() > 0
+
+
+def test_write_first_uses_the_newest_token():
+    torch.manual_seed(0)
+    x = torch.randn(2, 9, 1)
+    x2 = x.clone()
+    x2[:, -1] += 1.0
+    model = GatedFWP(FWPConfig(write_first=True, gate="group", gate_groups="edge"))
+    w, w2 = model.fast_weights(model.tokens(x)), model.fast_weights(model.tokens(x2))
+    assert not torch.allclose(w, w2)  # the last step now writes before the read
+    # and it is still Eq. 3 applied step by step, over all T tokens
+    tok = model.tokens(x)
+    proposals, gate = model.split_slow(model.slow(tok))
+    assert torch.allclose(w, gated_recursion(proposals, gate, None, model.group_index), atol=1e-5)
+    assert model.memory_kernel(x).shape[1] == 9
+    assert GatedFWP(FWPConfig(write_first=True))(x[:, :1]).shape == (2, 1)  # a single token still works

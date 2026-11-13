@@ -91,6 +91,11 @@ VARIANTS = {
     "lstm": dict(kind="lstm", model=dict(hidden=5)),
     # LSTM given the same difference tokens and residual read-out as the extended FWP
     "lstm_ext": dict(kind="lstm", model=dict(hidden=4, context=3, context_mode="diff", skip="last")),
+    # controls for the final parameter-matched model (same exact 8-dim difference tokens + residual)
+    "ar_hqkan8": dict(kind="ar", model=dict(context=8, hidden=4, latent=3, reps=3, skip="last",
+                                             context_mode="diff", token_dtype="float64")),
+    "lstm_ext8": dict(kind="lstm", model=dict(hidden=3, context=8, context_mode="diff", skip="last",
+                                               token_dtype="float64")),
     # ---- other paper variants (Table 1) and their extended versions ----------
     "gqkan_fwp": fwp(fast="linear", fast_out=3),  # HQKAN slow, linear fast
     "gqkan_fwp_ext": fwp(SKIP, DIF3, fast="linear", fast_out=3),
@@ -99,13 +104,43 @@ VARIANTS = {
 }
 
 
+def pm_variant(name: str) -> dict:
+    """Parameter-matched candidates, e.g. ``pm_diff5_layer_h3l2``:
+    residual read-out + ``diff``/``lags`` tokens of length 5 + gate grouping
+    (``scalar`` | ``edge`` | ``layer``, chrono-initialised) with a slow HQKAN
+    of hidden width 3 and latent width 2.  Optional ``_f2`` suffix: fast
+    programmer with 2 instead of 3 re-uploading repetitions."""
+    parts = name.split("_")
+    exact = parts[0] == "pmx"  # pmx_...: differences formed in float64
+    mode = "diff" if parts[1].startswith("diff") else "lags"
+    context = int(parts[1][4:])
+    gate = parts[2]
+    hidden, latent = int(parts[3][1 : parts[3].index("l")]), int(parts[3][parts[3].index("l") + 1 :])
+    cfg = dict(skip="last", context=context, context_mode=mode, slow_hidden=hidden, slow_latent=latent,
+               gate_init="chrono")
+    if gate != "scalar":
+        cfg.update(gate="group", gate_groups=gate)
+    for extra in parts[4:]:
+        if extra.startswith("f"):
+            cfg.update(fast_reps=int(extra[1:]))
+        elif extra == "noskip":  # ablation: no residual read-out
+            cfg.update(skip="none")
+        elif extra == "wf":  # write-then-read: the newest token also programs the fast weights
+            cfg.update(write_first=True)
+        else:
+            raise ValueError(name)
+    if exact:
+        cfg.update(token_dtype="float64")
+    return fwp(cfg)
+
+
 def resolve(name: str) -> dict:
     """``"<variant>@cos10"`` / ``"<variant>@lr3"``: variant trained with a cosine
     schedule from (or a constant) learning rate of 10e-3 / 3e-3."""
-    if "@" not in name:
-        return VARIANTS[name]
-    base, tag = name.split("@")
-    spec = dict(VARIANTS[base])
+    base, _, tag = name.partition("@")
+    spec = dict(pm_variant(base) if base.startswith(("pm_", "pmx_")) else VARIANTS[base])
+    if not tag:
+        return spec
     kind, value = (tag[:3], tag[3:]) if tag.startswith("cos") else (tag[:2], tag[2:])
     train = dict(spec.get("train") or {})
     train.update(lr=float(value) * 1e-3, schedule="cosine" if kind == "cos" else "constant")
@@ -123,9 +158,11 @@ def run_job(job: dict) -> dict:
     from qkanfwp.train import fit
 
     spec = resolve(job["variant"])
-    series = data.load_series(job["dataset"])
+    # Inputs are kept in float64 so that models with ``token_dtype='float64'``
+    # can difference them exactly; every model casts to float32 internally.
+    series = data.load_series(job["dataset"], dtype=np.float64)
     x, y = data.make_windows(series, job["window"])
-    x, y = torch.tensor(x), torch.tensor(y)
+    x, y = torch.tensor(x), torch.tensor(y, dtype=torch.float32)
     if job["protocol"] == "paper":
         tr, te = data.chrono_split(len(x), (0.8, 0.2))
         evals = {"train": (x[tr], y[tr]), "test": (x[te], y[te])}
