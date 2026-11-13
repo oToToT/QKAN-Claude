@@ -89,7 +89,8 @@ VARIANTS = {
     # no fast-weight memory at all: static HQKAN on the last (x, dx, d2x) token
     "ar_hqkan": dict(kind="ar", model=dict(context=3, hidden=4, latent=4, reps=3, skip="last", context_mode="diff")),
     "lstm": dict(kind="lstm", model=dict(hidden=5)),
-    "lstm_cos": dict(kind="lstm", model=dict(hidden=5), train=COS),
+    # LSTM given the same difference tokens and residual read-out as the extended FWP
+    "lstm_ext": dict(kind="lstm", model=dict(hidden=4, context=3, context_mode="diff", skip="last")),
     # ---- other paper variants (Table 1) and their extended versions ----------
     "gqkan_fwp": fwp(fast="linear", fast_out=3),  # HQKAN slow, linear fast
     "gqkan_fwp_ext": fwp(SKIP, DIF3, fast="linear", fast_out=3),
@@ -143,6 +144,7 @@ def run_job(job: dict) -> dict:
         model.fit_token_scale(x[tr])
     elif kind == "lstm":
         model = LSTMBaseline(**spec["model"])
+        model.fit_token_scale(x[tr])
     else:
         raise ValueError(kind)
 

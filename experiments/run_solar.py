@@ -103,7 +103,7 @@ def run_job(job: dict) -> dict:
     raw, scaled, (lo, hi) = data.load_sunspots()
     x, y = data.make_windows(scaled, WINDOW, HORIZON)
     x, y = torch.tensor(x), torch.tensor(y)
-    tr, va, te = data.chrono_split(len(x), (0.8, 0.1, 0.1))
+    tr, va, te = data.chrono_split(len(x), tuple(job.get("split") or (0.8, 0.1, 0.1)))
 
     torch.manual_seed(job["seed"])
     np.random.seed(job["seed"])
@@ -181,7 +181,7 @@ def run_job(job: dict) -> dict:
 
 
 def key(job):
-    return (job["variant"], job["seed"], job["lr"], job["epochs"])
+    return (job["variant"], job["seed"], job["lr"], job["epochs"], tuple(job.get("split") or (0.8, 0.1, 0.1)))
 
 
 def main():
@@ -194,13 +194,16 @@ def main():
     ap.add_argument("--workers", type=int, default=os.cpu_count())
     ap.add_argument("--threads", type=int, default=1)
     ap.add_argument("--save-dir", default=None, help="directory for test forecasts (.npz)")
+    ap.add_argument("--split", nargs=3, type=float, default=[0.8, 0.1, 0.1],
+                    help="chronological train/val/test fractions (paper: 0.8 0.1 0.1)")
     args = ap.parse_args()
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     done = {key(json.loads(line)) for line in out.read_text().splitlines()} if out.exists() else set()
     jobs = [
-        dict(variant=v, seed=s, lr=args.lr, epochs=args.epochs, threads=args.threads, save_dir=args.save_dir)
+        dict(variant=v, seed=s, lr=args.lr, epochs=args.epochs, threads=args.threads, save_dir=args.save_dir,
+             split=list(args.split))
         for v, s in itertools.product(args.variants, args.seeds)
     ]
     jobs = [j for j in jobs if key(j) not in done]

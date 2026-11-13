@@ -399,16 +399,27 @@ class ARHQKAN(nn.Module):
 
 
 class LSTMBaseline(nn.Module):
-    """Classical reference: single-layer LSTM + linear read-out."""
+    """Classical reference: single-layer LSTM + linear read-out.  ``context`` /
+    ``context_mode`` / ``skip`` give it the same tokens and residual read-out
+    as the extended FWP."""
 
-    def __init__(self, hidden: int, d_in: int = 1, d_out: int = 1):
+    def __init__(self, hidden: int, d_in: int = 1, d_out: int = 1, context: int = 1,
+                 context_mode: str = "lags", skip: str = "none"):
         super().__init__()
-        self.lstm = nn.LSTM(d_in, hidden, batch_first=True)
+        self.skip = skip
+        self.tokenizer = Tokenizer(d_in, context, context_mode)
+        self.lstm = nn.LSTM(self.tokenizer.d_tok, hidden, batch_first=True)
         self.head = nn.Linear(hidden, d_out)
 
+    def fit_token_scale(self, x_train):
+        self.tokenizer.fit_scale(x_train)
+
     def forward(self, x):
-        out, _ = self.lstm(x)
-        return self.head(out[:, -1])
+        out, _ = self.lstm(self.tokenizer(x))
+        y = self.head(out[:, -1])
+        if self.skip == "last":
+            y = y + x[:, -1, :1]
+        return y
 
 
 def count_parameters(model: nn.Module) -> int:
