@@ -43,6 +43,9 @@ def fwp(*mods, train=None, **kw):
 
 MTG = dict(gate="group", gate_groups="layer", gate_init="chrono")
 CTX = dict(context=3)
+DIF2 = dict(context=2, context_mode="diff")
+DIF3 = dict(context=3, context_mode="diff")
+COS3 = dict(lr=3e-3, schedule="cosine")
 SKIP = dict(skip="last")
 COS = dict(schedule="cosine")
 
@@ -65,27 +68,48 @@ VARIANTS = {
     "ctx2": fwp(context=2),
     "ctx3": fwp(CTX),
     "ctx4": fwp(context=4),
+    "dif2": fwp(DIF2),  # token (x_t, dx_t)
+    "dif3": fwp(DIF3),  # token (x_t, dx_t, d2x_t)
     "skip": fwp(SKIP),
-    "cos": fwp(train=COS),
-    # ---- combinations -------------------------------------------------------
-    "full": fwp(MTG, CTX, SKIP, train=COS),
-    "full-mtg": fwp(CTX, SKIP, train=COS),
-    "full-ctx": fwp(MTG, SKIP, train=COS),
-    "full-skip": fwp(MTG, CTX, train=COS),
-    "full-cos": fwp(MTG, CTX, SKIP),
-    # parameter-budget controls: a smaller full model and a larger baseline
-    "full_pm": fwp(MTG, CTX, SKIP, slow_latent=2, train=COS),
+    "cos": fwp(train=COS),  # cosine decay from the paper's 1e-3
+    "lr3": fwp(train=dict(lr=3e-3)),
+    "cos3": fwp(train=dict(lr=3e-3, schedule="cosine")),
+    "cos10": fwp(train=dict(lr=1e-2, schedule="cosine")),
+    # ---- screening combinations ---------------------------------------------
+    "skip_mtg": fwp(SKIP, MTG),
+    "skip_dif2": fwp(SKIP, DIF2),
+    "skip_dif3": fwp(SKIP, DIF3),
+    "skip_mtg_dif2": fwp(SKIP, MTG, DIF2),
+    "skip_mtg_dif3": fwp(SKIP, MTG, DIF3),
+    "skip_cos3": fwp(SKIP, train=COS3),
+    "skip_mtg_dif2_cos3": fwp(SKIP, MTG, DIF2, train=COS3),
+    # parameter-budget control: a larger scalar-gated baseline
     "base_big": fwp(slow_latent=4),
     # ---- controls -----------------------------------------------------------
-    "ar_hqkan": dict(kind="ar", model=dict(context=3, hidden=4, latent=4, reps=3, skip="last"), train=COS),
+    # no fast-weight memory at all: static HQKAN on the last (x, dx, d2x) token
+    "ar_hqkan": dict(kind="ar", model=dict(context=3, hidden=4, latent=4, reps=3, skip="last", context_mode="diff")),
     "lstm": dict(kind="lstm", model=dict(hidden=5)),
     "lstm_cos": dict(kind="lstm", model=dict(hidden=5), train=COS),
     # ---- other paper variants (Table 1) and their extended versions ----------
-    "gqkan_fwp": fwp(fast="linear", fast_out=3),
-    "gqkan_fwp_full": fwp(MTG, CTX, SKIP, fast="linear", fast_out=3, gate_groups="node", train=COS),
-    "g_qkanfwp": fwp(slow="mlp", slow_hidden=8),
-    "g_qkanfwp_full": fwp(MTG, CTX, SKIP, slow="mlp", slow_hidden=8, train=COS),
+    "gqkan_fwp": fwp(fast="linear", fast_out=3),  # HQKAN slow, linear fast
+    "gqkan_fwp_ext": fwp(SKIP, DIF3, fast="linear", fast_out=3),
+    "g_qkanfwp": fwp(slow="mlp", slow_hidden=8),  # classical slow, HQKAN fast
+    "g_qkanfwp_ext": fwp(SKIP, DIF3, slow="mlp", slow_hidden=8),
 }
+
+
+def resolve(name: str) -> dict:
+    """``"<variant>@cos10"`` / ``"<variant>@lr3"``: variant trained with a cosine
+    schedule from (or a constant) learning rate of 10e-3 / 3e-3."""
+    if "@" not in name:
+        return VARIANTS[name]
+    base, tag = name.split("@")
+    spec = dict(VARIANTS[base])
+    kind, value = (tag[:3], tag[3:]) if tag.startswith("cos") else (tag[:2], tag[2:])
+    train = dict(spec.get("train") or {})
+    train.update(lr=float(value) * 1e-3, schedule="cosine" if kind == "cos" else "constant")
+    spec["train"] = train
+    return spec
 
 
 def run_job(job: dict) -> dict:
@@ -97,7 +121,7 @@ def run_job(job: dict) -> dict:
     from qkanfwp.models import ARHQKAN, FWPConfig, GatedFWP, LSTMBaseline, count_parameters
     from qkanfwp.train import fit
 
-    spec = VARIANTS[job["variant"]]
+    spec = resolve(job["variant"])
     series = data.load_series(job["dataset"])
     x, y = data.make_windows(series, job["window"])
     x, y = torch.tensor(x), torch.tensor(y)
@@ -113,8 +137,10 @@ def run_job(job: dict) -> dict:
     kind = spec.get("kind", "fwp")
     if kind == "fwp":
         model = GatedFWP(FWPConfig(max_len=job["window"], **spec["model"]))
+        model.fit_token_scale(x[tr])
     elif kind == "ar":
         model = ARHQKAN(**spec["model"])
+        model.fit_token_scale(x[tr])
     elif kind == "lstm":
         model = LSTMBaseline(**spec["model"])
     else:

@@ -22,7 +22,8 @@ per gate group):
   time-scales spanning the input window (Tallec & Ollivier, 2018).
 * ``context``      - the token fed to both programmers is the causal patch
   ``(x_{t-p+1}, ..., x_t)`` instead of the scalar ``x_t`` (patch / delay
-  embedding, stride ``stride``).
+  embedding, stride ``stride``); with ``context_mode='diff'`` the patch is
+  expressed as ``(x_t, Dx_t, D^2x_t, ...)`` with unit-variance differences.
 * ``skip``         - residual read-out ``y = anchor(x) + F(...)``.
 """
 
@@ -59,6 +60,7 @@ class FWPConfig:
     max_len: int = 16  # longest memory time-scale for chrono init
     # tokenisation / read-out
     context: int = 1
+    context_mode: str = "lags"  # 'lags' (raw patch) | 'diff' (value + backward differences)
     stride: int = 1
     skip: str = "none"  # 'none' | 'last' | 'mean'
     fast_measure: bool = True
@@ -121,6 +123,56 @@ def gated_recursion(proposals, gate_logits, w_init=None, group_index=None):
     return w
 
 
+class Tokenizer(nn.Module):
+    """``(B, T, d_in)`` series -> ``(B, T', d_in * context)`` causal tokens.
+
+    ``mode='lags'``: token_t = (x_{t-p+1}, ..., x_t)  (stride-1 patch).
+    ``mode='diff'``: token_t = (x_t, Dx_t, D^2x_t, ...) / scale, i.e. the same
+    patch in backward-difference (discrete phase-space) coordinates, with
+    every difference order rescaled to unit variance on the training set.
+    ``stride > 1`` keeps the most recent token and every ``stride``-th before it.
+    """
+
+    def __init__(self, d_in: int = 1, context: int = 1, mode: str = "lags", stride: int = 1):
+        super().__init__()
+        self.d_in, self.context, self.mode, self.stride = d_in, context, mode, stride
+        self.d_tok = d_in * context
+        if mode == "diff":
+            assert d_in == 1, "difference tokens are implemented for scalar series"
+            # row k = k-th backward-difference stencil over (x_{t-p+1}, ..., x_t)
+            mat = torch.zeros(context, context)
+            for k in range(context):
+                for j in range(k + 1):
+                    mat[k, context - 1 - j] = (-1) ** j * math.comb(k, j)
+            self.register_buffer("diff_matrix", mat)
+            self.register_buffer("scale", torch.ones(context))
+        elif mode != "lags":
+            raise ValueError(mode)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.context > 1:
+            pad = x[:, :1].expand(-1, self.context - 1, -1)  # replicate-pad the past
+            xp = torch.cat([pad, x], 1)
+            x = xp.unfold(1, self.context, 1).reshape(x.shape[0], x.shape[1], -1)
+            if self.mode == "diff":
+                x = (x @ self.diff_matrix.T) / self.scale
+        if self.stride > 1:
+            start = (x.shape[1] - 1) % self.stride
+            x = x[:, start :: self.stride]
+        return x
+
+    @torch.no_grad()
+    def fit_scale(self, x_train: torch.Tensor) -> None:
+        """Rescale each difference order to unit training-set std (the value
+        coordinate itself is left untouched)."""
+        if self.mode != "diff" or self.context == 1:
+            return
+        self.scale.fill_(1.0)
+        std = self(x_train).reshape(-1, self.context).std(0).clamp_min(1e-8)
+        std[0] = 1.0
+        self.scale.copy_(std)
+
+
 class SlowHQKAN(nn.Module):
     """HQKAN programmer: classical encoder -> QKAN -> classical decoder."""
 
@@ -159,7 +211,8 @@ class GatedFWP(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.dedup_min_tokens = 4096
-        d_tok = cfg.d_in * cfg.context
+        self.tokenizer = Tokenizer(cfg.d_in, cfg.context, cfg.context_mode, cfg.stride)
+        d_tok = self.tokenizer.d_tok
 
         # ---- fast programmer -------------------------------------------------
         if cfg.fast == "hqkan":
@@ -234,17 +287,10 @@ class GatedFWP(nn.Module):
 
     # ------------------------------------------------------------------
     def tokens(self, x: torch.Tensor) -> torch.Tensor:
-        """``(B, T, d_in)`` -> ``(B, T', d_in * context)`` causal patches."""
-        cfg = self.cfg
-        if cfg.context > 1:
-            pad = x[:, :1].expand(-1, cfg.context - 1, -1)  # replicate-pad the past
-            xp = torch.cat([pad, x], 1)
-            x = xp.unfold(1, cfg.context, 1).reshape(x.shape[0], x.shape[1], -1)
-        if cfg.stride > 1:
-            # keep the most recent token, then every ``stride``-th one before it
-            start = (x.shape[1] - 1) % cfg.stride
-            x = x[:, start :: cfg.stride]
-        return x
+        return self.tokenizer(x)
+
+    def fit_token_scale(self, x_train: torch.Tensor) -> None:
+        self.tokenizer.fit_scale(x_train)
 
     def split_slow(self, out: torch.Tensor):
         """Slow-programmer output -> (proposal for all fast weights, gate logits)."""
@@ -331,15 +377,22 @@ class GatedFWP(nn.Module):
 
 
 class ARHQKAN(nn.Module):
-    """Control without fast weights: HQKAN on the last ``context`` values."""
+    """Control without any fast-weight memory: a static HQKAN applied to the
+    last token only (same tokenisation and residual read-out as ``GatedFWP``)."""
 
-    def __init__(self, context: int, hidden: int, latent: int, reps: int, d_out: int = 1, skip: str = "none"):
+    def __init__(self, context: int, hidden: int, latent: int, reps: int, d_out: int = 1,
+                 skip: str = "none", context_mode: str = "lags"):
         super().__init__()
-        self.context, self.skip = context, skip
+        self.skip = skip
+        self.tokenizer = Tokenizer(1, context, context_mode)
         self.net = SlowHQKAN(context, hidden, latent, reps, d_out)
 
+    def fit_token_scale(self, x_train):
+        self.tokenizer.fit_scale(x_train)
+
     def forward(self, x):
-        y = self.net(x[:, -self.context :, 0])
+        # only the last ``context`` values matter
+        y = self.net(self.tokenizer(x[:, -self.tokenizer.context :])[:, -1])
         if self.skip == "last":
             y = y + x[:, -1, :1]
         return y

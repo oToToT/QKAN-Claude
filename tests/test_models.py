@@ -122,3 +122,19 @@ def test_token_deduplication_is_exact(kw):
     g_ref = torch.autograd.grad(ref.sum(), model.slow.enc.weight, retain_graph=True)[0]
     g_out = torch.autograd.grad(out.sum(), model.slow.enc.weight)[0]
     assert torch.allclose(g_out, g_ref, atol=1e-5)
+
+
+def test_difference_tokens():
+    torch.manual_seed(0)
+    model = GatedFWP(FWPConfig(context=3, context_mode="diff"))
+    x = torch.randn(4, 10, 1)
+    tok = model.tokens(x)
+    s = x[..., 0]
+    assert torch.allclose(tok[:, 2:, 0], s[:, 2:])
+    assert torch.allclose(tok[:, 2:, 1], s[:, 2:] - s[:, 1:-1], atol=1e-6)
+    assert torch.allclose(tok[:, 2:, 2], s[:, 2:] - 2 * s[:, 1:-1] + s[:, :-2], atol=1e-6)
+    assert torch.allclose(tok[:, 0, 1:], torch.zeros(4, 2))  # replicate padding -> zero differences
+    model.fit_token_scale(x)
+    std = model.tokens(x).reshape(-1, 3).std(0)
+    assert torch.allclose(std[1:], torch.ones(2), atol=1e-5)
+    model(x).sum().backward()

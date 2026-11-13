@@ -53,6 +53,20 @@ VARIANTS = {
 }
 
 
+def resolve(name: str) -> dict:
+    """``"<variant>@cos5"`` / ``"<variant>@lr5"``: cosine schedule from (or a
+    constant) learning rate of 5e-3 instead of the ``--lr`` default."""
+    if "@" not in name:
+        return VARIANTS[name]
+    base, tag = name.split("@")
+    spec = dict(VARIANTS[base])
+    kind, value = (tag[:3], tag[3:]) if tag.startswith("cos") else (tag[:2], tag[2:])
+    train = dict(spec.get("train") or {})
+    train.update(lr=float(value) * 1e-3, schedule="cosine" if kind == "cos" else "constant")
+    spec["train"] = train
+    return spec
+
+
 def build(spec):
     import torch
     from torch import nn
@@ -85,7 +99,7 @@ def run_job(job: dict) -> dict:
     from qkanfwp import data
     from qkanfwp.models import count_parameters
 
-    spec = VARIANTS[job["variant"]]
+    spec = resolve(job["variant"])
     raw, scaled, (lo, hi) = data.load_sunspots()
     x, y = data.make_windows(scaled, WINDOW, HORIZON)
     x, y = torch.tensor(x), torch.tensor(y)
@@ -141,6 +155,20 @@ def run_job(job: dict) -> dict:
             best_state = copy.deepcopy(model.state_dict())
     final_test = evaluate(te)
     model.load_state_dict(best_state)
+    if job.get("save_dir"):
+        # keep the test forecasts (and the learned memory kernel of the last
+        # test window) of the selected checkpoint for the report figures
+        model.eval()
+        with torch.no_grad():
+            preds = torch.cat([model(x[te[i : i + 256]]) for i in range(0, len(te), 256)]).numpy()
+            extra = {}
+            if hasattr(model, "memory_kernel") and model.n_gates:
+                extra["kernel"] = model.memory_kernel(x[te[-1:]])[0].numpy().astype(np.float32)
+                extra["stride"] = np.array(model.cfg.stride)
+        save_dir = Path(job["save_dir"])
+        save_dir.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(save_dir / f"{job['variant']}_seed{job['seed']}.npz",
+                            preds=preds.astype(np.float16), test_index=te, **extra)
     return dict(
         job,
         params=count_parameters(model),
@@ -165,13 +193,14 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--workers", type=int, default=os.cpu_count())
     ap.add_argument("--threads", type=int, default=1)
+    ap.add_argument("--save-dir", default=None, help="directory for test forecasts (.npz)")
     args = ap.parse_args()
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     done = {key(json.loads(line)) for line in out.read_text().splitlines()} if out.exists() else set()
     jobs = [
-        dict(variant=v, seed=s, lr=args.lr, epochs=args.epochs, threads=args.threads)
+        dict(variant=v, seed=s, lr=args.lr, epochs=args.epochs, threads=args.threads, save_dir=args.save_dir)
         for v, s in itertools.product(args.variants, args.seeds)
     ]
     jobs = [j for j in jobs if key(j) not in done]
