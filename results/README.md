@@ -25,6 +25,16 @@ runners skip runs that are already present.
 | `robust_writefirst.jsonl` | Baselines with the write-then-read order |
 | `reference_linear_ar.json` | Closed-form linear AR(p) on the same train / test windows, scored on the same float32 targets as the models (`experiments/reference_baselines.py`) |
 
+## Settings of the authors' released code (`experiments/run_timeseries.py`, datasets `c_*`)
+
+| File | Content |
+|---|---|
+| `dev_code_protocol.jsonl` | Validation runs on the datasets as the authors' code generates them: learning rates of every model, and the configuration of the history-solved observable for NARMA |
+| `code_protocol.jsonl` | Paper split, seeds 0–4: the ported GQKAN-QKANFWP (`authors`: lr 1e-3, 100 epochs with an evaluation every 5; `authors@cos…`: tuned), QKAN-FWP+, HQKAN-Δ, QKAN-FWP-O and its static control. On NARMA (drive u → output y) the variants without residual read-out (`_noskip`) and the observable solved from the training windows (`_hist`) |
+| `solar_code_protocol.jsonl` | Solar cycle on the authors' 3,265-record file (`--records 3265`) with the ported 12,474-parameter model, window-index split and split by target time |
+
+`reference_linear_ar.json` also holds the closed-form references on these datasets (keys `c_…`).
+
 ## Families of systems (`experiments/run_family.py`)
 
 | File | Content |
@@ -74,5 +84,5 @@ have to be reloaded, the size of the fast state kept in classical memory and the
 
 ## Generated tables
 
-`tables_final.md`, `tables_single_change.md` (from `experiments/make_figures.py`) and `tables_om.md` (from
-`experiments/make_om_report.py`) hold the tables that `experiments/report/build_report.py` inserts into `REPORT.md`.
+`tables_final.md`, `tables_single_change.md` (from `experiments/make_figures.py`), `tables_om.md` (from
+`experiments/make_om_report.py`) and `tables_code.md` (from `experiments/make_code_report.py`) hold the tables that `experiments/report/build_report.py` inserts into `REPORT.md`.

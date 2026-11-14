@@ -390,6 +390,7 @@ NEGATIVE = r'''## 9. 沒有效果、或要小心的地方
 | QKAN-FWP-O：normalised delta rule 取代最小平方求解 | 論文 benchmark 上掃一次差 62 倍、掃四次差 59 倍；系統族上 7.4 倍與 4.6 倍，有雜訊時相當（5.4、6.3 節） | 只代表本報告實作的這一種 delta rule |
 | QKAN-FWP-O：用補值的 token 寫入（不遮罩、或把未知的差分階數補 0） | validation 上都比只寫完整 token 差 | 視窗開頭的 token 和查詢 token 不是同一個分布 |
 | QKAN-FWP-O：把先驗只放在遞迴的初始值、沒有下限 | NARMA10 上 3 個 seed 有 2 個發散 | 加上 $10^{-12}$ 的下限後不發散，而且整體比主模型略好（5.4、6.3 節） |
+| QKAN-FWP-O：作者程式碼版的 NARMA（讀 $u$ 預測 $y$） | Context 裡沒有目標，in-context 的寫入無法使用。改由訓練集的歷史解量測算符後比其他訓練出來的模型低一個數量級，但比對 $u$ 的二次特徵做 ridge 高 10–100 倍（5.7 節） | 這個任務是二次回歸問題 |
 | QKAN-FWP-O：Bloch 特徵相對於古典特徵 | 論文 benchmark 上所有特徵都在 ±20% 之內；系統族上小型 MLP 好 2.1 倍 | 特徵映射不是收益來源（5.4、6.2 節） |
 | 太陽黑子：單獨的 chrono 初始化（scalar gate） | 0.0185 對 0.0184 | 一個 gate 只有一個時間尺度 |
 | 太陽黑子：平滑的輸出基底（QKAN-FWP+） | validation 與 test 都沒有改善 | 省 2,000 個參數，但不降誤差 |
@@ -407,15 +408,17 @@ NEGATIVE = r'''## 9. 沒有效果、或要小心的地方
 
 ## 10. 限制與尚未完成的部分
 
-- 這是**獨立的重新實作**，不是官方程式，而且**沒有重現論文印出的 baseline 數字**（5.3 節）；層的大小、取樣點數等論文
-  未給的細節是在這裡選的（3.1、4.5 節），所以 time-series 的絕對 MSE 與論文表格的比較只能參考。CMG 也是依論文敘述重新實作的。
+- 5.1–5.6 節與第 6–8 節的資料與 baseline 是**只依論文文字的重新實作**，和作者程式碼的設定不同（4.6 節），因此沒有重現論文印出的數字
+  （5.3 節）；這些章節的絕對 MSE 不能和論文的表格比較。依程式碼的設定重跑的結果在 5.7 與 8.5 節；那裡的 baseline 是從程式碼移植的模型，
+  沒有和作者的程式逐一做數值比對（4.6 節）。CMG 是依其論文的敘述重新實作的。
 - 六個 time-series benchmark 幾乎是線性問題（5.2 節）。在它們上面，MSE 排名主要反映「誰把一個接近線性的映射擬合得比較準」。
 - **特徵映射不是收益的來源，也不主張量子優勢。** reps = 1 的 Bloch 特徵等於一次諧波的 Fourier 特徵；把它換成古典的 Fourier、tanh
   或小型 MLP 特徵而記憶不變，結果相當或更好，二次多項式在函數形式吻合的 Hénon map 上更好（5.4、6.2 節）。整個模型可以古典模擬。
   本報告沒有找到量子電路特徵帶來好處的任務；QKAN 的表述帶來的是第 7 節那些和硬體執行有關的性質，而古典特徵的版本根本不需要硬體。
 - QKAN-FWP-O 的 in-context 最小平方本身是既有的做法（3.3 節）。
-- **NARMA 的任務定義照論文**：讀 $y$ 的歷史、預測下一個 $y$。Reservoir computing 文獻裡標準的 NARMA 任務是讀輸入 $u$、輸出 $y$；
-  那個版本需要多通道的輸入，本報告沒有做，所以這裡的 NARMA 數字不能和那類文獻的數字比較。
+- **NARMA 有兩種定義**：論文的文字（讀 $y$ 預測下一個 $y$，5.1–5.6 節）與作者的程式碼（讀 $u$ 預測 $y$，5.7 節）。
+  在後者，QKAN-FWP-O 的 in-context 寫入沒有目標可用，改成由訓練集的歷史解量測算符；那不再是逐視窗改變的 fast weights。
+  它比其他訓練出來的模型低一個數量級，但輸給對 $u$ 的二次特徵做 ridge 的封閉形式解。
 - **記憶規則的比較只涵蓋本報告實作的幾種**：每次寫入都帶先驗的 gated 最小平方、先驗只當初始值的指數加權 RLS、不用 gate 的最小平方、
   掃一次與掃四次的 normalised delta rule。其他誤差驅動或遞迴最小平方的方法（不同的步長、動量、Kalman 形式的更新）沒有測。
 - **硬體相關的結果都是模擬**（第 7 節）：有限量測次數只有統計雜訊；硬體誤差只有靜態的讀出誤差、去極化與過旋轉，
@@ -438,9 +441,10 @@ NEGATIVE = r'''## 9. 沒有效果、或要小心的地方
 ```bash
 pip install -r requirements.txt
 python -m pytest tests -q               # 單元測試
-bash experiments/run_all.sh             # 全部實驗（約 35 CPU core-hours；已完成的 job 會自動跳過）
+bash experiments/run_all.sh             # 全部實驗（約 45 CPU core-hours；已完成的 job 會自動跳過）
 python experiments/make_figures.py      # results/tables_final.md、tables_single_change.md 與 figures/
 python experiments/make_om_report.py    # results/tables_om.md 與 figures/om_*.png
+python experiments/make_code_report.py  # results/tables_code.md 與 figures/code_protocol.png（作者程式碼的設定）
 python experiments/report/build_report.py   # 由 experiments/report/report_text.py 與上述表格組出 REPORT.md
 ```
 
@@ -454,6 +458,7 @@ python experiments/report/build_report.py   # 由 experiments/report/report_text
 | 同一個記憶、不同特徵 | `om_c0h6r1_p5_fourier1`、`om_c0h8r1_p5_fourier1`、`_fourier`、`_tanh`、`_poly2`、`_mlp`、`_classical` |
 | 同樣的特徵、不同記憶規則 | `_rls`、`_gnone`、`_delta`、`_delta4`、`_static`、`om_c0h9r1_p5_static`（參數量相當的靜態模型） |
 | 物理的 ⟨Z⟩ 讀出（有限量測次數與硬體誤差的實驗） | variant 名稱加 `+z` |
+| 作者程式碼的設定（5.7、8.5 節） | 資料集 `c_bessel`、`c_shm`、`c_narma5`、`c_narma10`、`c_dqc`、`c_jc`；移植的模型 `authors`；沒有 residual 讀出的版本加 `_noskip`；由訓練集歷史解量測算符的 QKAN-FWP-O：`om_c0h6r1_p5_hist`；太陽黑子：`run_solar.py --records 3265 --variants authors …` |
 
 `@cos30` 表示 cosine schedule、初始 lr 30e-3；`results/README.md` 說明每個結果檔的內容。
 環境：Python 3.13、PyTorch 2.15（CPU）、`qkan` 0.2.3（只用於測試對照）。
@@ -674,7 +679,12 @@ Bessel 256 點、Damped SHM 240 點、DQC 2200 點、Jaynes–Cummings 用作者
 
 <<code_repro>>
 
-CODE_REPRO_DISCUSSION
+- **用程式碼的設定之後，移植的模型和論文印出的數字相符。**（重跑 ÷ 印出）在 24 格的幾何平均是 1.1 倍（50 epochs 的平均）、
+  0.66 倍（50 epochs 的中位數）與 0.59 倍（100 epochs 的平均）。Bessel 在 N = 32、64 的平均被個別沒有收斂的 seed 拉高
+  （中位數是印出數字的 2–4 倍）；其餘格子在 0.2–5.5 倍之間，和論文表格裡與平均值同量級的標準差相稱。
+- 所以 5.3 節那 21 倍的差距來自資料設定與模型配置，不是 optimizer 或初始化的細節。
+- 這也說明論文 NARMA 那兩列數字的尺度：目標 $y$ 沒有正規化，變異數只有約 $1.5\times10^{-4}$，「一律預測訓練集的平均值」的 MSE 就是
+  1.2e-4 ～ 2.2e-4。論文為 GQKAN-QKANFWP 印出的 2e-5 ～ 1e-4 只比它低 1.3–8 倍；只用最近 3 個 $u$ 的線性回歸（4 個參數）是 4e-6 ～ 8e-6。
 
 **所有模型。** NARMA 的目標不是輸入序列的下一個值，所以在那兩個任務上 QKAN-FWP+ 與 HQKAN-Δ 拿掉 residual 讀出；
 QKAN-FWP-O 的 context 裡沒有目標可寫，量測算符改由訓練集裡有標籤的視窗以同一個封閉形式解出（3.3 節的 `memory='history'`；
@@ -686,7 +696,27 @@ QKAN-FWP-O 的 context 裡沒有目標可寫，量測算符改由訓練集裡有
 
 <<code_vs>>
 
-CODE_MAIN_DISCUSSION
+- **四條「讀自己、預測下一個值」的序列**（Bessel、Damped SHM、DQC、Jaynes–Cummings）：
+  - QKAN-FWP-O 是 8e-12、7e-12、4e-13 與 2e-12，比調過 lr 的作者模型低五到七個數量級，比 QKAN-FWP+ 與 HQKAN-Δ 低三到六個數量級，
+    16 格全部較低。和 5.1 節（依論文文字的資料）的結論相同。
+  - 同樣的特徵、量測算符只靠梯度訓練的對照（static observable）在 Bessel 與 Damped SHM 上差四個數量級，但在取樣很密的
+    DQC（2200 點）與 Jaynes–Cummings（3000 點）上只差 19 倍與 2.6 倍，Jaynes–Cummings 的 N = 8 那一格還比有記憶的版本低。
+    這兩條序列每一步的變化很小、訓練樣本多，靜態的線性項就擬合得很好，記憶的好處有限（和 5.4 節 Jaynes–Cummings 的結果一致）。
+  - 只用最近 8 個輸入的線性最小平方在這四條序列上仍然較低（Bessel 與 DQC 約 3e-14；Jaynes–Cummings 的 1.5e-13 是作者檔案的數值雜訊下限），
+    16 格中 QKAN-FWP-O 只有 1 格較低。
+- **NARMA（讀 $u$、預測 $y$）**：
+  - 視窗裡沒有 $y$，in-context 的寫入無法使用。由訓練集的歷史解量測算符的版本是 2.8e-7（NARMA5）與 9.7e-7（NARMA10），
+    比調過 lr 的作者模型低 24 倍與 11 倍，比論文協定下的作者模型低 65 倍與 54 倍，8 格全部較低；
+    和其他訓練出來的模型比，8 格中 6 格最低，NARMA10 的 N = 8 與 N = 32 兩格輸給靜態的對照（4.1e-6 對 2.0e-6、3.7e-6 對 1.8e-6）。
+  - 它比「同樣的特徵、量測算符靠梯度訓練」低 8.8 倍與 2.6 倍：封閉形式的解在這裡同樣有用，但幅度遠小於一步預測的情形。
+  - **這個任務本身是一個二次回歸問題。** 對最近 12 個 $u$ 及其兩兩乘積做 ridge 回歸（封閉形式，不需要訓練）是 2.8e-9 與 9.4e-8，
+    比 QKAN-FWP-O 再低 10–100 倍，8 格全部較低；只用最近 8 個 $u$ 的線性回歸（約 5e-6）就已經低於論文為 GQKAN-QKANFWP 印出的數字。
+    在作者版的 NARMA 上，所有 QKAN 模型（包括本報告的）都不如知道函數形式的最小平方。
+- **調 lr 對作者模型的效果**（同樣 50 epochs）：Bessel 100 倍，NARMA 與 DQC 2.6–4.7 倍，Damped SHM 與 Jaynes–Cummings 約 2 倍；
+  調過之後它在 NARMA 上和兩篇論文印出的最佳數字同一個水準。
+- **依論文文字（5.1 節）與依程式碼（本節）兩組設定的結論一致**：閉迴路的量測算符記憶在一步預測的序列上比其他 QKAN 架構低幾個數量級，
+  線性最小平方仍然更低；不同的是 NARMA——依程式碼的設定它不是一步預測，原本的機制不適用，改用訓練集歷史之後的領先幅度是一個數量級，
+  而且輸給二次特徵的 ridge。
 
 完整的表：
 
@@ -941,6 +971,7 @@ RESULTS_SOLAR = r'''## 8. 結果：太陽黑子週期預測
 「依 target 時間」的做法（`run_solar.py --purge`）是把 training 與 validation 各自最後 131 個 window 拿掉，
 使每個 split 的 targets 都結束在下一個 split 第一個預測起點之前；test windows 不變，所以兩種切法的 test 指標可以直接對照。
 **下面以依 target 時間切分的結果為準**；論文切法的結果只用來和論文印出的數字對照。
+8.1–8.4 節用論文文字所說的 3,326 筆資料與 3.1 節重新實作的 baseline；作者程式碼實際使用的資料檔與模型見 8.5 節。
 
 ### 8.2 依 target 時間切分的結果
 
@@ -992,6 +1023,17 @@ QKAN-FWP+ 的兩個部分（同樣是論文的切法，lr 2.5e-3；下面的圖�
 - 因此太陽黑子的結果在本報告中只支持一個有限的結論：把 fast weights 放在量測算符的參數化，可以用很少的電路與參數處理多輸出的任務
   （每個輸出只是同一批量測結果上的另一個量測算符）。它不支持「記憶機制改善了太陽週期的預測」。
 
+### 8.5 作者程式碼的資料檔、切分與模型
+
+作者的程式碼和論文的文字在這個任務上有兩處不同（4.6 節）：資料檔是 3,265 筆、到 2021-01 為止（2,606 個 window，切成 2084／260／262，
+test targets 是 1988-04 到 2021-01），模型是帶 BatchNorm 與 Dropout、fast 角度由秩一外積產生的 12,474 參數版本。
+下表在這組設定下重跑（`run_solar.py --records 3265`；lr 2.5e-3 是程式碼的設定，所有模型都用它），baseline 換成移植的模型，
+兩種切法的 test windows 相同：
+
+<<code_solar>>
+
+CODE_SOLAR_DISCUSSION
+
 ---
 
 '''
@@ -1010,14 +1052,21 @@ SUMMARY = r'''## 摘要
 
 ### 主要結果
 
-論文的六個 benchmark（test MSE，對四個 window 取幾何平均，5 seeds）：
+論文的六個 benchmark，資料與 baseline 依論文的文字重新實作（test MSE，對四個 window 取幾何平均，5 seeds）：
 
 <<ts_summary>>
 
+同樣六個 benchmark，資料、切分與 baseline 模型依作者公開的程式碼：
+
+<<code_summary>>
+
 1. **在 QKAN-based 的架構之間，閉迴路的量測算符記憶明顯較準。**
-   - 論文的 benchmark（24 格）：QKAN-FWP-O 在全部 24 格低於重新實作的 GQKAN-QKANFWP、CMG 與 QKAN-FWP+；對沒有記憶的 HQKAN-Δ 是
+   - 依論文文字的設定（24 格）：QKAN-FWP-O 在全部 24 格低於重新實作的 GQKAN-QKANFWP、CMG 與 QKAN-FWP+；對沒有記憶的 HQKAN-Δ 是
      23 格較低、NARMA5 的 N = 8 那一格輸。差距依資料集而定：對 HQKAN-Δ，NARMA 低 7–9 倍，DQC 低約 160 倍，
      Bessel 與 Damped SHM 低四到五個數量級（5.1 節）。
+   - 同樣六個 benchmark、依**作者公開程式碼的設定**（資料的取樣不同，NARMA 是讀驅動訊號 $u$ 預測 $y$，baseline 是從程式碼移植的 159 參數模型；
+     4.6、5.7 節）：QKAN-FWP-O 在全部 24 格低於調過 lr 的作者模型（NARMA 低 11–24 倍，其餘四條序列低五到七個數量級），
+     23 格低於 HQKAN-Δ。NARMA 的視窗裡沒有 $y$，context 沒有目標可寫，那裡的 QKAN-FWP-O 是用同一個封閉形式、由訓練集的歷史解量測算符的版本。
    - 每條序列物理參數都不同的系統族（10 格，模型必須從 16 步的視窗辨識系統）：QKAN-FWP-O 在 9 格比其他架構
      （GQKAN-QKANFWP、CMG、QKAN-FWP+、HQKAN-Δ、LSTM）低、1 格打平；沒有雜訊時低 15 倍到約 2 萬倍，有雜訊時低 1.1–2.3 倍（第 6 節）。
 2. **收益來自閉迴路的記憶，不是特徵映射**（隔離對照；5.4、6.2、6.3 節）。
@@ -1047,21 +1096,24 @@ SUMMARY = r'''## 摘要
 
 1. **不主張量子優勢，特徵映射也不是貢獻。** 整個模型可以古典模擬；同一個記憶配上古典特徵一樣好或更好，而且不需要量測。
    QKAN 的表述帶來的是結果 3 的那些性質——它們回答的是「一個要在量子硬體上執行的 FWP，fast weights 該放在哪裡、代價是什麼」。
-2. **六個 benchmark 幾乎是線性問題。** 一個 9 參數的線性 AR(8)（最小平方，不需要訓練）在 24 格中的 21 格贏過兩篇論文印出的
-   最佳數字；對 QKAN-FWP-O 是 13 格較低、11 格較高（NARMA 與 DQC）（5.2 節）。QKAN-FWP-O 對其他神經模型的差距，
-   主要是「在 context 內直接解最小平方」對「用 SGD 逼近線性映射」的差距。
+2. **這些 benchmark 用封閉形式的最小平方就能解得更好。** 一步預測的序列幾乎是線性問題：一個 9 參數的線性 AR(8)
+   （最小平方，不需要訓練）在 24 格中的 21 格贏過兩篇論文印出的最佳數字；對 QKAN-FWP-O 是 13 格較低、11 格較高（5.2 節）。
+   作者版的 NARMA（讀 $u$ 預測 $y$）是二次回歸問題：對最近 12 個 $u$ 的二次特徵做 ridge 比所有模型（包括 QKAN-FWP-O）低 10 倍以上（5.7 節）。
+   QKAN-FWP-O 對其他神經模型的差距，主要是「以封閉形式解讀出」對「用 SGD 逼近」的差距。
 3. **數值精度。** 所有模型與參考線都以 float32 的 targets 評分；低於 $10^{-15}$ 的 MSE 是 targets 的捨入誤差，計算倍數時先截在那裡。
    QKAN-FWP-O 內部改用 float32 幾乎沒有差別（1.2 倍與 1.0 倍）。
-4. **NARMA 照論文的定義**：讀 $y$ 的歷史、預測下一個 $y$；不是 reservoir computing 文獻裡「讀 $u$ 預測 $y$」的任務（第 4、10 節）。
-5. **沒有重現論文印出的 baseline 數字。** 重新實作的 GQKAN-QKANFWP 在論文協定下比論文印出的數字差 21 倍（幾何平均），
-   調過 lr 後差 1.9 倍；原因沒有找到（5.3 節）。所有「低幾倍」的結論都是同一個 pipeline 內的比較。
+4. **論文的文字和作者的程式碼不一致**（4.6 節）：NARMA 在文字裡是讀 $y$ 預測下一個 $y$，在程式碼裡是讀驅動訊號 $u$ 預測 $y$ 而且不正規化；
+   Bessel、Damped SHM、DQC 的取樣點數、太陽黑子檔案的長度（3,326 對 3,265 筆）與模型的細節（秩一外積、先寫後讀）也不同。
+   本報告兩組設定都跑了；兩組的數字不能互相比較。
+5. **和論文印出的數字的關係。** 只依論文文字的重新實作沒有重現印出的數字（論文協定下差 21 倍，5.3 節）；
+   改用程式碼的資料設定與移植的模型之後重現了（24 格的幾何平均 1.1 倍，5.7 節）。所有「低幾倍」的結論都是同一組設定內的比較。
 6. **In-context 最小平方不是新方法**（ALPaCA、R2D2、mesa-layer、delta rule）。新的部分是把它接到量子 FWP 上：
    指出 QKAN 層對量測算符是線性的，以及由此得到的硬體性質（3.3 節）。
 7. **有限量測次數**（7.1 節，只有模擬）：以精確期望值訓練的 QKAN-FWP-O 對量測雜訊很敏感；訓練時就加入量測雜訊可以修正，
    但在接近線性的任務上它靠的是古典計算、沒有量測雜訊的線性項。在需要非線性特徵的 Hénon map 上，每個電路每個輸入約 $10^4$ 次
    量測以上才優於靜態的 HQKAN-Δ，$10^2$ 次時反而較差。
 
-沒有做的部分（「讀 $u$ 預測 $y$」的 NARMA、MiniGrid RL、真機實驗、以多 qubit VQC 為 fast programmer 的模型）列在第 10 節。
+沒有做的部分（MiniGrid RL、真機實驗、以多 qubit VQC 為 fast programmer 的模型）列在第 10 節。
 
 ---
 

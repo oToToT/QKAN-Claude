@@ -8,7 +8,8 @@
 #   4. observable-memory FWP (QKAN-FWP-O), CMG baselines, controls that swap the
 #      features or the memory rule, families of systems, finite shots, static
 #      device errors, solar cycle
-#   5. tables, figures and the report
+#   5. the same benchmarks with the settings of the authors' released code
+#   6. tables, figures and the report
 set -euo pipefail
 SMALL="bessel shm narma5 narma10 dqc"
 
@@ -215,8 +216,43 @@ python experiments/run_solar.py --purge --variants om_static om base mtg_cyc_pm 
     --out results/solar_purged.jsonl
 
 # ===========================================================================
-# 5. Tables, figures, report
+# 5. Settings of the authors' released code (github.com/MatthewPeng57/Gated-QKAN-FWP):
+#    datasets c_* (NARMA reads the drive u), the ported 159- and 12,474-parameter models
+# ===========================================================================
+C=results/code_protocol.jsonl
+FWP=pmx_diff8_edge_h3l2
+# learning rates on the validation part of these datasets
+python experiments/run_timeseries.py --protocol dev --datasets c_bessel c_shm --windows 16 64 --seeds 100 101 \
+    --variants authors@cos3 authors@cos10 authors@cos30 $OM@cos10 $OM@cos30 ar_hqkan8@cos10 ar_hqkan8@cos30 $FWP@cos10 $FWP@cos30 \
+    --out results/dev_code_protocol.jsonl
+python experiments/run_timeseries.py --protocol dev --datasets c_narma5 c_narma10 --windows 16 64 --seeds 100 101 \
+    --variants authors@cos3 authors@cos10 authors@cos30 ${OM}_static_noskip@cos10 ${OM}_static_noskip@cos30 \
+               om_c0h9r1_p5_static_noskip@cos10 om_c0h9r1_p5_static_noskip@cos30 ar_hqkan8_noskip@cos10 ar_hqkan8_noskip@cos30 \
+               ${FWP}_noskip@cos10 ${FWP}_noskip@cos30 ${OM}_hist@cos10 ${OM}_hist@cos30 \
+               om_c0h9r1_p5_hist_pscalar@cos10 om_c0h9r1_p5_hist_pscalar@cos30 \
+    --out results/dev_code_protocol.jsonl
+python experiments/run_timeseries.py --protocol dev --datasets c_dqc c_jc --windows 16 --seeds 100 \
+    --variants authors@cos3 authors@cos10 authors@cos30 $OM@cos10 $OM@cos30 ar_hqkan8@cos10 ar_hqkan8@cos30 $FWP@cos10 $FWP@cos30 \
+    --out results/dev_code_protocol.jsonl
+# the authors' model at the paper's learning rate (evaluated every 5 epochs up to 100), then all models
+python experiments/run_timeseries.py --datasets c_bessel c_shm c_narma5 c_narma10 c_dqc c_jc --variants authors --epochs 100 --out $C
+python experiments/run_timeseries.py --datasets c_bessel c_shm --out $C \
+    --variants authors@cos30 ar_hqkan8@cos30 $FWP@cos10 $OM@cos30 om_c0h9r1_p5_static@cos30
+python experiments/run_timeseries.py --datasets c_narma5 c_narma10 --out $C \
+    --variants authors@cos30 ar_hqkan8_noskip@cos30 ${FWP}_noskip@cos30 ${OM}_static_noskip@cos30 om_c0h9r1_p5_static_noskip@cos30 \
+               ${OM}_hist@cos30 om_c0h9r1_p5_hist_pscalar@cos30
+python experiments/run_timeseries.py --datasets c_dqc --out $C \
+    --variants authors@cos30 ar_hqkan8@cos30 $FWP@cos30 $OM@cos30 om_c0h9r1_p5_static@cos30
+python experiments/run_timeseries.py --datasets c_jc --out $C \
+    --variants authors@cos10 ar_hqkan8@cos30 $FWP@cos10 $OM@cos30 om_c0h9r1_p5_static@cos30
+# solar cycle on the authors' 3,265-record file with the ported model, both splits
+python experiments/run_solar.py --records 3265 --variants om_static om authors mtg_cyc_pm --out results/solar_code_protocol.jsonl
+python experiments/run_solar.py --records 3265 --purge --variants om_static om authors mtg_cyc_pm --out results/solar_code_protocol.jsonl
+
+# ===========================================================================
+# 6. Tables, figures, report
 # ===========================================================================
 python experiments/make_figures.py
 python experiments/make_om_report.py
+python experiments/make_code_report.py
 python experiments/report/build_report.py
