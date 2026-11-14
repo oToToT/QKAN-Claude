@@ -5,8 +5,9 @@
 #   1. re-implemented baseline and single changes on top of it
 #   2. parameter-matched gated model (QKAN-FWP+) and static control (HQKAN-Δ)
 #   3. references and robustness checks
-#   4. observable-memory FWP (QKAN-FWP-O), CMG baselines, families of systems,
-#      finite shots, solar cycle
+#   4. observable-memory FWP (QKAN-FWP-O), CMG baselines, controls that swap the
+#      features or the memory rule, families of systems, finite shots, static
+#      device errors, solar cycle
 #   5. tables, figures and the report
 set -euo pipefail
 SMALL="bessel shm narma5 narma10 dqc"
@@ -149,8 +150,21 @@ python experiments/run_timeseries.py --datasets jc --out results/final_om.jsonl 
 # controls: single precision, and classical tanh / cos features read by the same memory
 python experiments/run_timeseries.py --out results/final_om.jsonl \
     --variants ${OM}_single@cos30 ${OM}_tanh@cos30 ${OM}_fourier@cos30
-python experiments/run_timeseries.py --datasets $SMALL --variants cmg cmg@cos30 cmg_plus@cos30 --out results/final_cmg.jsonl
-python experiments/run_timeseries.py --datasets jc --variants cmg@cos10 cmg_plus@cos30 --out results/final_cmg.jsonl
+# controls with the same memory on other features (first-harmonic Fourier, quadratic polynomial, small MLP),
+# other memory rules (exponentially weighted RLS, delta rule with four sweeps) and a static model of the same size
+python experiments/run_timeseries.py --datasets $SMALL --out results/final_om.jsonl \
+    --variants ${OM}_fourier1@cos30 om_c0h8r1_p5_fourier1@cos30 ${OM}_poly2@cos30 ${OM}_mlp@cos30 \
+               om_c0h9r1_p5_static@cos30 ${OM}_delta4@cos30 ${OM}_rls@cos30
+python experiments/run_timeseries.py --datasets jc --out results/final_om.jsonl \
+    --variants om_c0h8r1_p5_fourier1@cos30 ${OM}_poly2@cos30 ${OM}_mlp@cos30 om_c0h9r1_p5_static@cos30
+# CMG baselines: learning rate chosen on the validation split, then the final runs
+python experiments/run_timeseries.py --protocol dev --datasets $SMALL --windows 16 64 --seeds 100 101 102 \
+    --variants cmg@cos10 cmg@cos30 cmg@cos100 cmg_plus@cos10 cmg_plus@cos30 cmg_plus@cos100 --out results/dev_cmg.jsonl
+python experiments/run_timeseries.py --protocol dev --datasets jc --windows 16 --seeds 100 \
+    --variants cmg@cos10 cmg@cos30 cmg_plus@cos10 cmg_plus@cos30 --out results/dev_cmg.jsonl
+python experiments/run_timeseries.py --datasets $SMALL --variants cmg cmg@cos10 cmg@cos30 cmg_plus@cos10 cmg_plus@cos30 \
+    --out results/final_cmg.jsonl
+python experiments/run_timeseries.py --datasets jc --variants cmg@cos10 cmg_plus@cos10 cmg_plus@cos30 --out results/final_cmg.jsonl
 # robustness of QKAN-FWP-O: train-only normalisation, NARMA without the start-up transient
 python experiments/run_timeseries.py --windows 16 --norm train --variants $OM@cos30 --out results/robust_norm.jsonl
 python experiments/run_timeseries.py --datasets narma5b narma10b --windows 8 16 --variants $OM@cos30 --out results/robust_burnin.jsonl
@@ -158,6 +172,7 @@ python experiments/run_timeseries.py --datasets narma5b narma10b --windows 8 16 
 # families of systems: learning-rate sweep on seed 0, then seeds 1-2 at the rate with the lowest validation MSE
 FV=""
 for v in $OM ${OM}_static ${OM}_classical ${OM}_gnone ${OM}_delta ${OM}_single ${OM}_tanh ${OM}_fourier \
+         ${OM}_fourier1 om_c0h8r1_p5_fourier1 ${OM}_poly2 ${OM}_mlp om_c0h9r1_p5_static ${OM}_delta4 ${OM}_rls \
          ar_hqkan8 pmx_diff8_edge_h3l2 cmg_plus cmg base lstm_ext8; do
     FV="$FV $v@cos3 $v@cos10 $v@cos30"
 done
@@ -169,12 +184,19 @@ python experiments/run_family.py --windows 16 --noise 0 0.02 --best-lr-from resu
 # what the memory of QKAN-FWP-O uses (weights of the context pairs)
 python experiments/memory_probe.py
 
-# cost of the read-out rules (timing)
+# cost of the read-out rules (timing) and resources per prediction (circuit runs, measurement settings, classical state)
 python experiments/cost.py
+python experiments/resources.py
 
 # finite shots (budget per circuit and input, split over the measurement bases; binomial sampling)
-python experiments/shot_noise.py --variants $OM@cos30 ${OM}_single@cos30 ar_hqkan8+z@cos30 pmx_diff8_edge_h3l2+z@cos30 \
+python experiments/shot_noise.py --variants $OM@cos30 ${OM}_single@cos30 ${OM}_axis@cos30 ar_hqkan8+z@cos30 pmx_diff8_edge_h3l2+z@cos30 \
     --train-shots 0 1e4 --out results/shot_noise.jsonl
+# where the shot noise enters (query / context circuits; X, Y, Z or the programmed axis) and the closed-form variance
+python experiments/shot_noise.py --decompose --variants $OM@cos30 --train-shots 0 1e4 --out results/shot_decomposition.jsonl
+
+# static device errors switched on at test time (read-out error, depolarising noise, over-rotation), no retraining
+python experiments/device_noise.py --out results/device_noise.jsonl \
+    --variants $OM@cos30 ${OM}_rls@cos30 ${OM}_static@cos30 om_c0h9r1_p5_static@cos30 ar_hqkan8+z@cos30 pmx_diff8_edge_h3l2+z@cos30
 
 # solar cycle: configuration sweep (compared on validation loss), then both versions on the three splits
 python experiments/run_solar.py --seeds 0 1 --out results/dev_solar_om.jsonl \
@@ -184,6 +206,14 @@ for lr in 2.5e-3 1e-3; do
 done
 python experiments/run_solar.py --variants om_static om --split 0.6 0.2 0.2 --out results/final_solar_om.jsonl
 python experiments/run_solar.py --variants om_static om --split 0.7 0.15 0.15 --seeds 0 1 2 --out results/final_solar_om.jsonl
+# the same models with splits by target time: the last 131 windows of train and validation are dropped, so that no
+# target of one split lies inside the next split
+for lr in 2.5e-3 1e-3; do
+    python experiments/run_solar.py --purge --variants om_static om base mtg_cyc_pm --lr $lr --out results/solar_purged.jsonl
+done
+python experiments/run_solar.py --purge --variants om_static om base mtg_cyc_pm --split 0.6 0.2 0.2 --out results/solar_purged.jsonl
+python experiments/run_solar.py --purge --variants om_static om base mtg_cyc_pm --split 0.7 0.15 0.15 --seeds 0 1 2 \
+    --out results/solar_purged.jsonl
 
 # ===========================================================================
 # 5. Tables, figures, report

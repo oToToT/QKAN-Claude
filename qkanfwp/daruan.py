@@ -57,10 +57,35 @@ def shots_per_setting(settings: int) -> int | None:
     return max(int(_SHOTS // settings), 1)
 
 
+# Static device errors (experiments/device_noise.py), applied to every circuit
+# of every model.  ``_DEVICE = (contraction, offset, over_rotation)``:
+#   * every measured Pauli expectation v becomes ``contraction * v + offset``.
+#     Depolarising noise of strength p gives contraction 1 - p; read-out errors
+#     P(read 1 | 0) = e01 and P(read 0 | 1) = e10 give contraction
+#     1 - e01 - e10 and offset e10 - e01;
+#   * every rotation angle (trainable and data-encoding) is executed as
+#     ``(1 + over_rotation) * angle`` (a calibration error of the pulse area).
+_DEVICE: tuple[float, float, float] = (1.0, 0.0, 0.0)
+
+
+def set_device(depolarizing: float = 0.0, e01: float = 0.0, e10: float = 0.0, over_rotation: float = 0.0) -> None:
+    """Static device errors; the defaults restore the ideal device."""
+    global _DEVICE
+    _DEVICE = ((1.0 - depolarizing) * (1.0 - e01 - e10), e10 - e01, over_rotation)
+
+
+def get_device() -> tuple[float, float, float]:
+    return _DEVICE
+
+
 def _measure(v: torch.Tensor, settings: int = 1) -> torch.Tensor:
-    """Finite-shot estimate of the Pauli expectations ``v`` (each from its own
-    measurement setting).  The sampling error is treated as a constant in the
-    backward pass, so training with shots is possible."""
+    """Measured value of the Pauli expectations ``v`` (each from its own
+    measurement setting): static device errors first, then the finite-shot
+    estimate.  The sampling error is treated as a constant in the backward
+    pass, so training with shots is possible."""
+    contraction, offset, _ = _DEVICE
+    if contraction != 1.0 or offset != 0.0:
+        v = contraction * v + offset
     n = shots_per_setting(settings)
     if n is None:
         return v
@@ -74,6 +99,9 @@ def _pz_amplitudes(x, theta, preact_w=None, preact_b=None):
     shape ``(*batch, out, in)`` (complex)."""
     reps = theta.shape[-2] - 1
     xe = x.unsqueeze(-2)  # (*batch, 1, in)
+    over = 1.0 + _DEVICE[2]
+    if over != 1.0:
+        theta = theta * over
 
     # State after the Hadamard, kept as two complex amplitudes.
     half = 0.5 * theta
@@ -102,7 +130,7 @@ def _pz_amplitudes(x, theta, preact_w=None, preact_b=None):
                 enc = xe
             else:
                 enc = preact_w[..., layer] * xe + preact_b[..., layer]
-            d = torch.polar(torch.ones_like(enc), -0.5 * enc)
+            d = torch.polar(torch.ones_like(enc), -0.5 * over * enc)
             a = a * d
             b = b * torch.conj(d)
     return a, b

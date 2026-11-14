@@ -217,6 +217,24 @@ def timeseries_part(out):
     out.append("| *Linear AR(8), least squares* | 9 | " + " | ".join(versus(o, lin) for o in ours) + " |")
     out.append("")
 
+    # ---- QKAN-FWP-O against each model, dataset by dataset (the overall geometric mean hides the spread) ----
+    out += ["## QKAN-FWP-O against each model, by dataset (reference test MSE ÷ QKAN-FWP-O test MSE; above 1: QKAN-FWP-O is lower)\n",
+            "Geometric mean over the four windows per dataset; the last two columns count the 24 cells and give the smallest and "
+            f"largest per-cell factor. Values below {FLOOR:g} are clipped first.\n",
+            "| Compared with | " + " | ".join(TITLES[d] for d in DATASETS) + " | Cells where QKAN-FWP-O is lower | Smallest … largest factor |",
+            "|---|" + "---|" * (len(DATASETS) + 2)]
+    by_ds = [(NAMES[v], lambda d, w, v=v: m(c, d, w, v) if (d, w, v) in c else None)
+             for v in ("base_tuned", "cmg_tuned", "cmg_plus_tuned", OURS, STATIC) if any(k[2] == v for k in c)]
+    by_ds.append(("*Linear AR(8), least squares*", lin))
+    for label, get in by_ds:
+        per, allr = [], []
+        for d in DATASETS:
+            rs_ = [fl(get(d, w)) / fl(m(c, d, w, OM)) for w in WINDOWS if (d, w, OM) in c and get(d, w) is not None]
+            per.append(big(gmean(rs_)) + "×" if len(rs_) == len(WINDOWS) else "–")
+            allr += rs_
+        out.append(f"| {label} | " + " | ".join(per) + f" | {sum(r_ > 1 for r_ in allr)}/{len(allr)} | {big(min(allr))}× … {big(max(allr))}× |")
+    out.append("")
+
     # ---- all cells ----
     cols = refs + ours
     out += ["## All cells: test MSE (paper protocol, mean ± std over 5 seeds)\n",
@@ -573,6 +591,141 @@ def shots_part(out):
     plt.close(fig)
 
 
+def decomposition_part(out):
+    """Sources of shot noise in QKAN-FWP-O and the closed-form variance of the query read-out."""
+    path = RES / "shot_decomposition.jsonl"
+    if not path.exists():
+        return
+    rows = defaultdict(list)
+    for line in path.read_text().splitlines():
+        r = json.loads(line)
+        if r.get("decomposition"):
+            rows[(r["task"], r["train_shots"])].append(r)
+    tasks = [t for t in SHOT_TASKS if any(k[0] == t for k in rows)]
+    if not tasks:
+        return
+    levels = SHOT_KEYS[:-1]
+    labels = ["S = 10²", "10³", "10⁴", "10⁵", "10⁶"]
+    modes = [("query_xyz", "query circuits only, X/Y/Z"), ("query_axis", "query circuits only, programmed axis"),
+             ("context", "context circuits only"), ("all_xyz", "all circuits, query in X/Y/Z"),
+             ("all_axis", "all circuits, query along the programmed axis")]
+    out += ["## Where the shot noise of QKAN-FWP-O enters (N = 16; test MSE, mean over 3 seeds)\n",
+            "The same trained model; only the listed circuit runs are sampled, the others use exact expectations. "
+            "\"Programmed axis\": each query circuit is measured in the single basis given by the fast observable R_T "
+            "(all S shots in one setting) instead of X, Y and Z (⌊S/3⌋ each).\n",
+            "| Task | Trained with | Sampled circuits | " + " | ".join(labels) + " | exact |", "|---|---|---|" + "---|" * (len(labels) + 1)]
+    for t in tasks:
+        for ts, tlab in ((None, "exact"), (1e4, "S = 10⁴")):
+            rs = rows.get((t, ts))
+            if not rs:
+                continue
+            exact = np.mean([r["exact"] for r in rs])
+            for key_, lab in modes:
+                vals = [np.mean([r["decomposition"][lv][key_] for r in rs]) for lv in levels]
+                out.append(f"| {SHOT_TASKS[t]} | {tlab} | {lab} | " + " | ".join(f"{x:.1e}" for x in vals) + f" | {exact:.1e} |")
+    out.append("")
+    out += ["## Query read-out: measured excess MSE and the closed-form shot variance (S = 10³, models trained with exact expectations)\n",
+            "Excess = test MSE with only the query circuits sampled − test MSE with exact expectations. "
+            "Closed form: y_scale² Σ_i Σ_a R_ia² (1 − n_ia²) / ⌊S/3⌋ for X/Y/Z and y_scale² Σ_i |R_i|² (1 − cos_i²) / S for the programmed axis.\n",
+            "| Task | Excess, X/Y/Z | Closed form, X/Y/Z | Excess, programmed axis | Closed form, programmed axis | Variance X/Y/Z ÷ programmed axis (closed form) |",
+            "|---|---|---|---|---|---|"]
+    for t in tasks:
+        rs = rows.get((t, None))
+        if not rs:
+            continue
+        ex = np.mean([r["exact"] for r in rs])
+        d = lambda k_: np.mean([r["decomposition"]["1000"][k_] for r in rs]) - ex  # noqa: E731
+        c = lambda k_: np.mean([r["query_variance_closed_form"]["1000"][k_] for r in rs])  # noqa: E731
+        out.append(f"| {SHOT_TASKS[t]} | {d('query_xyz'):.2e} | {c('xyz'):.2e} | {d('query_axis'):.2e} | {c('axis'):.2e} | {c('xyz') / c('axis'):.1f}× |")
+    out.append("")
+
+
+DEVICE_MODELS = [(OM, "QKAN-FWP-O", VIOLET, "*"),
+                 (OM_BASE + "_rls@cos30", "QKAN-FWP-O with the RLS memory", VIOLET, None),
+                 ("om_c0h9r1_p5_static@cos30", "QKAN-FWP-O features without memory (9 circuits)", BLUE, "s"),
+                 (OM_BASE + "_static@cos30", "QKAN-FWP-O features without memory (6 circuits)", BLUE, None),
+                 ("ar_hqkan8+z@cos30", "HQKAN-Δ, ⟨Z⟩ read-out", MAGENTA, "P"),
+                 ("pmx_diff8_edge_h3l2+z@cos30", "QKAN-FWP+, ⟨Z⟩ read-out", ORANGE, "D")]
+DEVICE_KINDS = {"readout": "read-out error e (P(1|0) = e, P(0|1) = 2e)", "depol": "depolarising noise p",
+                "overrot": "over-rotation ε of every gate"}
+DEVICE_LEVELS = ["0.0025", "0.005", "0.01", "0.02", "0.05"]
+
+
+def device_part(out):
+    """Static device errors switched on at test time, without retraining."""
+    path = RES / "device_noise.jsonl"
+    if not path.exists():
+        return
+    rows = defaultdict(list)
+    for line in path.read_text().splitlines():
+        r = json.loads(line)
+        rows[(r["task"], r["variant"])].append(r)
+    tasks = [t for t in SHOT_TASKS if any(k[0] == t for k in rows)]
+    models = [mm for mm in DEVICE_MODELS if any(k[1] == mm[0] for k in rows)]
+    if not tasks or not models:
+        return
+
+    def val(t, v, kind=None, level=None, scope=None):
+        rs = rows[(t, v)]
+        if kind is None:
+            return np.mean([r["test"]["ideal"] for r in rs])
+        if scope is None:
+            return np.mean([r["test"][kind][level] for r in rs])
+        return np.mean([r["scope"][kind][scope][level] for r in rs])
+
+    cols = [("readout", "0.005"), ("readout", "0.01"), ("readout", "0.02"), ("readout", "0.05"),
+            ("depol", "0.01"), ("depol", "0.05"), ("overrot", "0.01"), ("overrot", "0.05")]
+    heads = ["read-out 0.5 %", "read-out 1 %", "read-out 2 %", "read-out 5 %", "depolarising 1 %", "depolarising 5 %",
+             "over-rotation 1 %", "over-rotation 5 %"]
+    out += ["## Static device errors at test time (N = 16; test MSE, mean over 3 seeds; models trained on ideal circuits, no retraining, exact expectations)\n",
+            "Read-out error e: every measured expectation v becomes (1 − 3e)·v + e (P(read 1 | 0) = e, P(read 0 | 1) = 2e). "
+            "Depolarising p: v becomes (1 − p)·v. Over-rotation ε: every rotation angle is executed as (1 + ε)·angle. "
+            "The error is the same in every circuit run of a window.\n",
+            "| Task | Model | Ideal device | " + " | ".join(heads) + " |", "|---|---|---|" + "---|" * len(heads)]
+    for t in tasks:
+        for v, lab, _, _ in models:
+            if (t, v) in rows:
+                out.append(f"| {SHOT_TASKS[t]} | {lab} | {val(t, v):.1e} | " + " | ".join(f"{val(t, v, k_, lv):.1e}" for k_, lv in cols) + " |")
+    out.append("")
+    out += ["## Degradation by static device errors (test MSE with the error ÷ test MSE on the ideal device, geometric mean over the tasks)\n",
+            "| Model | " + " | ".join(heads) + " |", "|---|" + "---|" * len(heads)]
+    for v, lab, _, _ in models:
+        ts_ = [t for t in tasks if (t, v) in rows]
+        out.append(f"| {lab} | " + " | ".join(big(gmean([val(t, v, k_, lv) / val(t, v) for t in ts_])) + "×" for k_, lv in cols) + " |")
+    out.append("")
+    if any(r.get("scope") for r in rows.get((tasks[0], OM), [])):
+        out += ["## QKAN-FWP-O: the same error in all circuits, or only in the query / only in the context circuits (test MSE, mean over 3 seeds)\n",
+                "| Task | Error | Ideal device | All circuits | Query circuits only | Context circuits only | Query only ÷ all |", "|---|---|---|---|---|---|---|"]
+        for t in tasks:
+            for kind, lv, lab in (("readout", "0.01", "read-out 1 %"), ("depol", "0.01", "depolarising 1 %"), ("overrot", "0.01", "over-rotation 1 %")):
+                a_, q_, c_ = val(t, OM, kind, lv), val(t, OM, kind, lv, "query"), val(t, OM, kind, lv, "context")
+                out.append(f"| {SHOT_TASKS[t]} | {lab} | {val(t, OM):.1e} | {a_:.1e} | {q_:.1e} | {c_:.1e} | {big(q_ / a_)}× |")
+        out.append("")
+
+    fig, axes = plt.subplots(1, len(tasks), figsize=(3.1 * len(tasks), 3.9), squeeze=False)
+    xs = np.arange(len(DEVICE_LEVELS) + 1)
+    for ax, t in zip(axes[0], tasks):
+        for v, lab, color, marker in models:
+            if marker is None or (t, v) not in rows:
+                continue
+            ys = [val(t, v)] + [val(t, v, "readout", lv) for lv in DEVICE_LEVELS]
+            ax.plot(xs, ys, color=color, marker=marker, markersize=8 if marker == "*" else 5, label=lab)
+        if (t, OM) in rows and rows[(t, OM)][0].get("scope"):
+            ys = [val(t, OM)] + [val(t, OM, "readout", lv, "query") for lv in DEVICE_LEVELS]
+            ax.plot(xs, ys, color=VIOLET, linestyle=(0, (4, 2)), marker="*", markersize=6, markerfacecolor="white",
+                    label="QKAN-FWP-O, error in the query circuits only")
+        ax.set_yscale("log")
+        ax.set_xticks(xs, ["0", "0.25", "0.5", "1", "2", "5"])
+        ax.set_title(SHOT_TASKS[t], fontsize=9.5)
+        ax.set_xlabel("read-out error e (%)")
+    axes[0, 0].set_ylabel("test MSE (log scale)")
+    handles, labs = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labs, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.0), fontsize=8.5)
+    fig.tight_layout(rect=(0, 0, 1, 0.86))
+    fig.savefig(FIG / "om_device.png", dpi=200)
+    plt.close(fig)
+
+
 def resources_part(out):
     path = RES / "resources.json"
     if not path.exists():
@@ -708,6 +861,8 @@ def main():
     cost_part(out)
     family_part(out)
     shots_part(out)
+    decomposition_part(out)
+    device_part(out)
     solar_part(out)
     (RES / "tables_om.md").write_text("\n".join(out) + "\n")
     print("\n".join(out))

@@ -466,6 +466,8 @@ class ObservableMemoryFWP(nn.Module):
         amp = rv.norm(dim=-1).clamp_min(1e-30)
         cos = ((rv * nv).sum(-1) / amp).clamp(-1.0, 1.0)  # expectation of the unit observable
         n = max(int(shots), 1)
+        contraction, offset, _ = daruan.get_device()  # static errors of the measured expectation
+        cos = (contraction * cos + offset).clamp(-1.0, 1.0)
         counts = torch.binomial(torch.full_like(cos, float(n)), ((1.0 + cos.detach()) * 0.5).clamp(0.0, 1.0))
         est = cos + (2.0 * counts / n - 1.0 - cos.detach())
         return classical + (amp * est).sum(-1)

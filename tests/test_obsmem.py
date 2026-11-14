@@ -481,3 +481,48 @@ def test_shot_scope_context_leaves_the_query_exact():
         finally:
             daruan.set_shots(None)
     assert torch.equal(noisy, exact)
+
+
+def test_device_errors_act_on_measured_expectations_and_rotation_angles():
+    g = torch.Generator().manual_seed(0)
+    x = torch.randn(5, 2, generator=g)
+    theta = torch.randn(1, 2, 2, 2, generator=g)
+    z, bloch = daruan_pz(x, theta, fast_measure=False), daruan_bloch(x, theta)
+    try:
+        daruan.set_device(e01=0.01, e10=0.02)  # read-out errors: v -> (1 - e01 - e10) v + (e10 - e01)
+        assert torch.allclose(daruan_pz(x, theta, fast_measure=False), 0.97 * z + 0.01, atol=1e-6)
+        assert torch.allclose(daruan_bloch(x, theta), 0.97 * bloch + 0.01, atol=1e-6)
+        daruan.set_device(depolarizing=0.1)
+        assert torch.allclose(daruan_bloch(x, theta), 0.9 * bloch, atol=1e-6)
+        daruan.set_device(over_rotation=0.05)  # every rotation is executed 5 % too far
+        over = daruan_bloch(x, theta)
+    finally:
+        daruan.set_device()
+    assert torch.allclose(over, daruan_bloch(1.05 * x, 1.05 * theta), atol=1e-6)
+    assert torch.equal(daruan_bloch(x, theta), bloch)
+
+
+def test_in_context_solve_absorbs_static_affine_device_errors():
+    """With more context pairs than features and a weak prior the prediction is
+    unchanged when a static read-out error acts on context and query circuits
+    alike; the same error in the query circuits alone changes it."""
+    torch.manual_seed(0)
+    x = _series(b=8, t=24)
+    m = ObservableMemoryFWP(ObsMemConfig(context=2, hidden=1, reps=1, gate="none", prior_init=1e-12, max_len=24))
+    m.fit_token_scale(x)
+    _randomise(m)
+    with torch.no_grad():
+        m.log_prior.fill_(math.log(1e-12))
+        ideal = m(x)
+        s, k, y_ctx, valid = m.context_pairs(x)
+        try:
+            daruan.set_device(e01=0.02, e10=0.04)
+            both = m(x)
+            k_err = m.context_pairs(x)[1]
+        finally:
+            daruan.set_device()
+        r = m.fast_observable(k[:, :-1], y_ctx, valid)  # ideal context, erroneous query
+        query_only = ((k_err[:, -1] * r).sum(-1) * m.y_scale + s[:, -1])[:, None]
+    scale = (ideal - x[:, -1]).abs().max()
+    assert (both - ideal).abs().max() < 1e-5 * scale
+    assert (query_only - ideal).abs().max() > 1e-3 * scale
