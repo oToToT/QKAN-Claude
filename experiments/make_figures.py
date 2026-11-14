@@ -615,7 +615,8 @@ def reference_tables(c, baselines, tuned_b, names, params):
         if has_om:
             ro = gmean([m(d, 16, OM, c_om) / m(d, 16, v["tuned"], cc) for d in ds])
             wo = sum(m(d, 16, OM, c_om) < m(d, 16, v["tuned"], cc) for d in ds)
-            line += f", QKAN-FWP-O {1 / ro:.2g}× lower ({wo}/{len(ds)})"
+            mant, exp = f"{1 / ro:.1e}".split("e")
+            line += f", QKAN-FWP-O {mant}e{int(exp)}× lower ({wo}/{len(ds)})"
         out += ["", line + ".", ""]
 
     # ---- (d) NARMA without the start-up transient ----

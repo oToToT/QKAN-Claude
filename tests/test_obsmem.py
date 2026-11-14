@@ -262,3 +262,85 @@ def test_tangent_features_are_the_parameter_shift_derivative():
     assert m.n_feat == 1 + 4 + 12 + 12
     with pytest.raises(ValueError):
         ObservableMemoryFWP(ObsMemConfig(hidden=4, reps=2, tangent=True))
+
+
+# ---------------------------------------------------------------------------
+# finite shots, precision, classical feature controls
+# ---------------------------------------------------------------------------
+from qkanfwp import daruan  # noqa: E402
+
+
+def test_shot_budget_is_split_over_the_three_bases():
+    """A circuit budget of S shots gives floor(S / 3) shots to each of the
+    non-commuting X, Y, Z bases; estimates are binomial counts mapped to [-1, 1]."""
+    torch.manual_seed(0)
+    x = torch.zeros(20000, 1)
+    theta = torch.zeros(1, 1, 2, 2)
+    theta[..., 1] = 0.7
+    exact = daruan_bloch(x[:1], theta)[0, 0, 0]
+    try:
+        daruan.set_shots(100)
+        assert daruan.shots_per_setting(3) == 33 and daruan.shots_per_setting(1) == 100
+        est = daruan_bloch(x, theta)[:, 0, 0]
+        counts = (est + 1.0) * 33 / 2.0
+        assert torch.allclose(counts, counts.round(), atol=1e-4)  # values lie on the 33-shot grid
+        assert torch.allclose(est.mean(0), exact, atol=0.01)
+        assert torch.allclose(est.std(0), ((1 - exact**2) / 33).sqrt(), rtol=0.05, atol=2e-3)
+        z = daruan_pz(x, theta, fast_measure=False)[:, 0, 0]  # Z only: all 100 shots in one basis
+        assert torch.allclose(z.std(), ((1 - exact[2] ** 2) / 100).sqrt(), rtol=0.1)
+        # parameter-shifted copies share the same budget
+        est9 = daruan_bloch(x, theta, circuit_copies=3)[:, 0, 0]
+        assert torch.allclose(est9.std(0)[:2], ((1 - exact[:2] ** 2) / 11).sqrt(), rtol=0.05)
+    finally:
+        daruan.set_shots(None)
+    assert torch.equal(daruan_bloch(x[:1], theta)[0, 0, 0], exact)
+
+
+def test_shot_noise_keeps_the_gradient_of_the_exact_expectation():
+    x = torch.linspace(-1, 1, 7)[:, None].requires_grad_(True)
+    theta = torch.randn(1, 1, 2, 2, generator=torch.Generator().manual_seed(0))
+    g_exact = torch.autograd.grad(daruan_bloch(x, theta).sum(), x)[0]
+    try:
+        daruan.set_shots(50)
+        g_shots = torch.autograd.grad(daruan_bloch(x, theta).sum(), x)[0]
+    finally:
+        daruan.set_shots(None)
+    assert torch.allclose(g_exact, g_shots)
+
+
+def test_single_precision_model_matches_double_precision_weights():
+    torch.manual_seed(0)
+    x = _series()
+    m64 = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, prior_init=1e-1))
+    _randomise(m64)
+    m32 = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, prior_init=1e-1, precision="float32"))
+    m32.load_state_dict({k: v.float() for k, v in m64.state_dict().items()})
+    y32 = m32(x)
+    assert y32.dtype == torch.float32
+    assert torch.allclose(m64(x), y32.double(), atol=1e-4)
+
+
+@pytest.mark.parametrize("kind", ["tanh", "fourier"])
+def test_classical_feature_controls_use_the_same_memory(kind):
+    torch.manual_seed(0)
+    x = _series()
+    m = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, quantum=False, classical=kind))
+    q = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1))
+    assert m.n_feat == q.n_feat == 25 and not hasattr(m, "theta")
+    _randomise(m)
+    _, k, y_ctx, valid = m.context_pairs(x)
+    c, b = m.statistics_recursion(x)
+    assert torch.allclose(m.fast_observable(k[:, :-1], y_ctx, valid), torch.linalg.solve(c, b), atol=1e-8)
+    with pytest.raises(ValueError):
+        ObservableMemoryFWP(ObsMemConfig(classical=kind))  # needs quantum=False
+
+
+def test_gram_matrix_is_bounded_below_by_the_prior():
+    torch.manual_seed(0)
+    m = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1))
+    _randomise(m)
+    x = _series()
+    c = m.gram_matrix(x)
+    assert torch.allclose(c, m.statistics_recursion(x)[0], atol=1e-10)
+    lam = m._prior_precision()
+    assert torch.linalg.eigvalsh(c).min() >= lam.min() - 1e-12

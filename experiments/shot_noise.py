@@ -1,11 +1,22 @@
-"""Finite-shot sensitivity of the observable-memory FWP and of the earlier models.
+"""Finite-shot sensitivity of the observable-memory FWP, the gated FWP and the static HQKAN.
 
 On hardware every expectation value is estimated from a finite number of
 shots.  The observable-memory read-out solves a linear system built from
 measured features, so measurement noise can be amplified when the learned
 prior precision is small.  This script trains each model twice - with exact
-expectations, and "noise-aware" with ``--train-shots`` shots per expectation
-during training - and evaluates the test MSE as a function of the shot count.
+expectations, and "noise-aware" with ``--train-shots`` during training - and
+evaluates the test MSE as a function of the shot budget.
+
+Shot accounting (qkanfwp/daruan.py): the budget ``S`` is per circuit and per
+input (one edge, one token).  A circuit read out in the Z basis spends all S
+shots there; QKAN-FWP-O needs <X>, <Y> and <Z> of every circuit, which do not
+commute, so each basis gets floor(S / 3) shots.  Outcomes are drawn from the
+exact binomial distribution.  Because the models run different numbers of
+circuits per prediction, every record also stores ``circuit_runs`` (circuit
+evaluations per prediction); total shots per prediction = circuit_runs * S.
+
+For QKAN-FWP-O the record also holds the condition number of the Gram matrix
+``C_T`` of the read-out solve (median over the test windows) at every budget.
 
 Only physical read-outs are compared: the baselines use <Z> ("+z" variants).
 """
@@ -26,6 +37,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 EVAL_SHOTS = [1e2, 1e3, 1e4, 1e5, 1e6, None]
 
 
+def circuit_runs(model, window: int) -> int:
+    """Single-qubit circuit evaluations needed for one prediction."""
+    from qkanfwp.models import ARHQKAN, GatedFWP
+    from qkanfwp.obsmem import ObservableMemoryFWP
+
+    if isinstance(model, ObservableMemoryFWP):
+        c = model.cfg
+        tokens = max(window - c.context, 0) + 1  # complete context tokens + the query
+        return c.hidden * tokens * (3 if c.tangent else 1) if c.quantum else 0
+    if isinstance(model, ARHQKAN):
+        q = model.net.qkan
+        return q.in_dim * q.out_dim  # one token
+    if isinstance(model, GatedFWP):
+        c = model.cfg
+        slow = model.slow.qkan.in_dim * model.slow.qkan.out_dim if c.slow == "hqkan" else 0
+        fast = c.fast_in * c.fast_out if c.fast == "hqkan" else 0
+        return slow * (window if c.write_first else window - 1) + fast
+    raise TypeError(type(model))
+
+
 def run_job(job: dict) -> dict:
     import numpy as np
     import torch
@@ -33,6 +64,7 @@ def run_job(job: dict) -> dict:
     torch.set_num_threads(1)
     from qkanfwp import daruan, data
     from qkanfwp.models import count_parameters
+    from qkanfwp.obsmem import ObservableMemoryFWP
     from qkanfwp.train import fit, mse
     from run_family import load_family
     from run_timeseries import build_model, resolve
@@ -56,14 +88,18 @@ def run_job(job: dict) -> dict:
     model = build_model(spec, job["window"], tr[0])
     daruan.set_shots(job["train_shots"])
     fit(model, tr, {}, seed=job["seed"], eval_every=10**9, **tkw)
-    out = {}
+    out, cond = {}, {}
     for shots in EVAL_SHOTS:
         daruan.set_shots(shots)
         torch.manual_seed(1000 + job["seed"])
+        key_ = "inf" if shots is None else f"{shots:g}"
         reps = 1 if shots is None else 5
-        out["inf" if shots is None else f"{shots:g}"] = float(np.mean([mse(model, *te) for _ in range(reps)]))
+        out[key_] = float(np.mean([mse(model, *te) for _ in range(reps)]))
+        if isinstance(model, ObservableMemoryFWP):
+            c = model.gram_matrix(te[0][:512]).double()
+            cond[key_] = float(torch.linalg.cond(c).median())
     daruan.set_shots(None)
-    return dict(job, params=count_parameters(model), test=out)
+    return dict(job, params=count_parameters(model), circuit_runs=circuit_runs(model, job["window"]), test=out, cond=cond)
 
 
 def key(job):

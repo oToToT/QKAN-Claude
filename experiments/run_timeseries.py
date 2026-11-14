@@ -91,7 +91,7 @@ VARIANTS = {
     "lstm": dict(kind="lstm", model=dict(hidden=5)),
     # LSTM given the same difference tokens and residual read-out as the extended FWP
     "lstm_ext": dict(kind="lstm", model=dict(hidden=4, context=3, context_mode="diff", skip="last")),
-    # controls for the final parameter-matched model (same exact 8-dim difference tokens + residual)
+    # HQKAN-Δ and the LSTM control: the same exact 8-dim difference tokens and residual read-out as QKAN-FWP+
     "ar_hqkan8": dict(kind="ar", model=dict(context=8, hidden=4, latent=3, reps=3, skip="last",
                                              context_mode="diff", token_dtype="float64")),
     "lstm_ext8": dict(kind="lstm", model=dict(hidden=3, context=8, context_mode="diff", skip="last",
@@ -116,7 +116,8 @@ def om_variant(name: str) -> dict:
     ``static`` (no fast weights), ``delta`` (sequential delta rule), ``gconst`` /
     ``gnone`` (constant gate / additive statistics), ``nobase`` / ``silu`` (QKAN
     base activation), ``classical`` (no Bloch features), ``nomask``, ``pscalar``
-    (one prior precision), ``tan`` (tangent features), ``lags`` (raw lag tokens), ``p<x>`` (prior_init 10^-x),
+    (one prior precision), ``tan`` (tangent features), ``single`` (float32),
+    ``tanh`` / ``fourier`` (classical nonlinear features instead of the Bloch features), ``lags`` (raw lag tokens), ``p<x>`` (prior_init 10^-x),
     ``noclip`` (no gradient-norm clipping; the default clips the norm at 1)."""
     parts = name.split("_")
     core = parts[1]
@@ -129,6 +130,8 @@ def om_variant(name: str) -> dict:
         "nobase": dict(base="none"), "silu": dict(base="silu"),
         "classical": dict(quantum=False), "nomask": dict(mask_padded=False),
         "pscalar": dict(prior="scalar"), "lags": dict(context_mode="lags"), "tan": dict(tangent=True),
+        "single": dict(precision="float32"),
+        "tanh": dict(quantum=False, classical="tanh"), "fourier": dict(quantum=False, classical="fourier"),
     }
     for extra in parts[2:]:
         if extra in switches:
@@ -302,7 +305,7 @@ def main():
     jobs.sort(key=lambda j: -(3000 if j["dataset"] == "jc" else 300) * (8 + j["window"]))
     if args.norm == "global":
         for j in jobs:
-            j.pop("norm")  # keep the default protocol's records identical to earlier runs
+            j.pop("norm")  # records without a "norm" field use the default (global) scaling
     print(f"{len(jobs)} jobs to run ({len(done)} already done)", flush=True)
     with get_context("spawn").Pool(args.workers) as pool, out.open("a") as fh:
         for i, res in enumerate(pool.imap_unordered(run_job, jobs), 1):

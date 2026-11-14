@@ -25,6 +25,8 @@ TABLES = {
     "fam_vs": ("tables_om.md", "QKAN-FWP-O against each model on the families"),
     "om_ablation_fam": ("tables_om.md", "QKAN-FWP-O ablation on the families"),
     "shots": ("tables_om.md", "Finite-shot sensitivity"),
+    "shots_cond": ("tables_om.md", "Condition number of the Gram matrix"),
+    "cost": ("tables_om.md", "Cost of the read-out"),
     "solar_all": ("tables_om.md", "Solar cycle: all models"),
     # results/tables_final.md: gated models, reproduction gap, robustness, solar details
     "fwp_ablation": ("tables_final.md", "QKAN-FWP+ ablation"),

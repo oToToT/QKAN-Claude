@@ -56,6 +56,9 @@ ABLATIONS = [
     ("pscalar", "one prior precision instead of one per feature"),
     ("nobase", "no base-activation (linear) term: Bloch features only"),
     ("classical", "no Bloch features: linear term only (classical control)"),
+    ("tanh", "classical tanh(w·u + b) features instead of the Bloch features, same memory"),
+    ("fourier", "classical cos(w·u + b) features instead of the Bloch features, same memory"),
+    ("single", "float32 instead of float64 (features, statistics and solve)"),
 ]
 FAMILY_TITLES = {"shm": "Damped oscillation", "tones": "Two tones", "jc": "Jaynes–Cummings",
                  "henon": "Hénon map", "duffing": "Duffing"}
@@ -66,6 +69,8 @@ FAMILY_MODELS = [
     ("pmx_diff8_edge_h3l2", "QKAN-FWP+"),
     ("ar_hqkan8", "HQKAN-Δ (static)"),
     ("lstm_ext8", "LSTM, same tokens (not QKAN)"),
+    (OM_BASE + "_tanh", "Same memory on classical tanh features (not QKAN)"),
+    (OM_BASE + "_fourier", "Same memory on classical cos features (not QKAN)"),
     (OM_BASE, "QKAN-FWP-O"),
 ]
 
@@ -407,6 +412,7 @@ def fig_family(sel, refs, params, cells_, models, path):
 
 # ---------------------------------------------------------------------------
 SHOT_MODELS = [(OM, "QKAN-FWP-O", VIOLET, "*"),
+               (OM_BASE + "_single@cos30", "QKAN-FWP-O, float32", VIOLET, None),
                ("ar_hqkan8+z@cos30", "HQKAN-Δ, ⟨Z⟩ read-out", MAGENTA, "P"),
                ("pmx_diff8_edge_h3l2+z@cos30", "QKAN-FWP+, ⟨Z⟩ read-out", ORANGE, "D")]
 SHOT_TASKS = {"bessel": "Bessel J2", "narma10": "NARMA10", "dqc": "Delayed quantum control",
@@ -418,43 +424,76 @@ def shots_part(out):
     path = RES / "shot_noise.jsonl"
     if not path.exists():
         return
-    data = defaultdict(list)
+    data, cond, runs = defaultdict(list), defaultdict(list), {}
     for line in path.read_text().splitlines():
         r = json.loads(line)
-        data[(r["task"], r["variant"], r["train_shots"])].append([r["test"][k] for k in SHOT_KEYS])
+        k = (r["task"], r["variant"], r["train_shots"])
+        data[k].append([r["test"][c] for c in SHOT_KEYS])
+        if r.get("cond"):
+            cond[k].append([r["cond"][c] for c in SHOT_KEYS])
+        runs[r["variant"]] = r["circuit_runs"]
     tasks = [t for t in SHOT_TASKS if any(k[0] == t for k in data)]
     if not tasks:
         return
-    labels = ["10²", "10³", "10⁴", "10⁵", "10⁶", "exact"]
-    out += ["## Finite-shot sensitivity (N = 16; test MSE vs shots per measured expectation, mean over 3 seeds)\n",
-            "Training with exact expectations, or with 10⁴ shots per expectation (\"noise-aware\"). All read-outs are physical ⟨X⟩, ⟨Y⟩, ⟨Z⟩.\n",
-            "| Task | Model | Trained with | " + " | ".join(labels) + " |", "|---|---|---|" + "---|" * len(labels)]
+    labels = ["S = 10²", "10³", "10⁴", "10⁵", "10⁶", "exact"]
+    out += ["## Finite-shot sensitivity (N = 16; test MSE against the shot budget S per circuit and input, mean over 3 seeds)\n",
+            "S shots are available to every circuit for every input it processes. A ⟨Z⟩ read-out spends them in one basis; "
+            "QKAN-FWP-O splits them over the X, Y and Z bases (⌊S/3⌋ each). Outcomes are binomial. "
+            "\"Circuit runs\" is the number of circuit evaluations per prediction, so the total number of shots per prediction "
+            "is circuit runs × S. Training used exact expectations, or the same finite-shot sampling at S = 10⁴ (\"noise-aware\").\n",
+            "| Task | Model | Circuit runs per prediction | Trained with | " + " | ".join(labels) + " |",
+            "|---|---|---|---|" + "---|" * len(labels)]
     for t in tasks:
         for v, lab, _, _ in SHOT_MODELS:
-            for ts, tlab in ((None, "exact"), (1e4, "10⁴ shots")):
+            for ts, tlab in ((None, "exact"), (1e4, "S = 10⁴")):
                 if (t, v, ts) in data:
                     mu = np.mean(data[(t, v, ts)], 0)
-                    out.append(f"| {SHOT_TASKS[t]} | {lab} | {tlab} | " + " | ".join(f"{x:.1e}" for x in mu) + " |")
+                    out.append(f"| {SHOT_TASKS[t]} | {lab} | {runs[v]} | {tlab} | " + " | ".join(f"{x:.1e}" for x in mu) + " |")
     out.append("")
+    if cond:
+        out += ["## Condition number of the Gram matrix C_T of QKAN-FWP-O (median over test windows, mean over 3 seeds)\n",
+                "| Task | Model | Trained with | " + " | ".join(labels) + " |", "|---|---|---|" + "---|" * len(labels)]
+        for t in tasks:
+            for v, lab, _, _ in SHOT_MODELS:
+                for ts, tlab in ((None, "exact"), (1e4, "S = 10⁴")):
+                    if (t, v, ts) in cond:
+                        mu = np.exp(np.mean(np.log(cond[(t, v, ts)]), 0))
+                        out.append(f"| {SHOT_TASKS[t]} | {lab} | {tlab} | " + " | ".join(f"{x:.0e}" for x in mu) + " |")
+        out.append("")
     fig, axes = plt.subplots(1, len(tasks), figsize=(3.1 * len(tasks), 3.9), squeeze=False)
     xs = np.arange(len(SHOT_KEYS))
     for ax, t in zip(axes[0], tasks):
         for v, lab, color, marker in SHOT_MODELS:
+            if marker is None:  # the single-precision model is in the table only
+                continue
             for ts, ls in ((None, "-"), (1e4, (0, (4, 2)))):
                 if (t, v, ts) in data:
                     mu = np.mean(data[(t, v, ts)], 0)
                     ax.plot(xs, mu, color=color, marker=marker, markersize=8 if marker == "*" else 5, linestyle=ls,
-                            label=f"{lab}, trained {'exact' if ts is None else 'with 10⁴ shots'}")
+                            label=f"{lab}, trained {'exact' if ts is None else 'with S = 10⁴'}")
         ax.set_yscale("log")
-        ax.set_xticks(xs, labels)
+        ax.set_xticks(xs, ["10²", "10³", "10⁴", "10⁵", "10⁶", "exact"])
         ax.set_title(SHOT_TASKS[t], fontsize=9.5)
-        ax.set_xlabel("shots per expectation at test time")
+        ax.set_xlabel("shots per circuit and input, S")
     axes[0, 0].set_ylabel("test MSE (log scale)")
     handles, labs = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labs, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.0), fontsize=8.5)
     fig.tight_layout(rect=(0, 0, 1, 0.84))
     fig.savefig(FIG / "om_shots.png", dpi=200)
     plt.close(fig)
+
+
+def cost_part(out):
+    path = RES / "cost.json"
+    if not path.exists():
+        return
+    rows = json.loads(path.read_text())
+    names = {"none": "static (no memory)", "delta": "sequential delta rule", "ls": "gated least squares"}
+    out += ["## Cost of the read-out (one CPU thread, F = 25 features, milliseconds per 1000 windows)\n",
+            "| Window N | Context pairs | Memory rule | Memory update and solve | Whole forward pass (features included) |", "|---|---|---|---|---|"]
+    for r in rows:
+        out.append(f"| {r['window']} | {r['pairs']} | {names[r['memory']]} | {r['memory_ms_per_1000_windows']:.2f} | {r['ms_per_1000_windows']:.1f} |")
+    out.append("")
 
 
 SOLAR_SPLITS = {(0.8, 0.1, 0.1): "paper split 80/10/10",
@@ -515,8 +554,9 @@ def memory_part(out):
         return
     n_pairs = probe[ds[0]][0]["n_pairs"]
     out += [f"## Memory weights learned by QKAN-FWP-O (N = 32, {n_pairs} complete context pairs; mean over test windows and seeds)\n",
-            "| Dataset | Test MSE | Total weight Σβ | Effective number of pairs | Weight of the most recent pair | Weight of the 3 most recent pairs |",
-            "|---|---|---|---|---|---|"]
+            "| Dataset | Test MSE | Total weight Σβ | Effective number of pairs | Weight of the most recent pair "
+            "| Weight of the 3 most recent pairs | Prior precision (median) | cond(C_T), median | cond(C_T), max |",
+            "|---|---|---|---|---|---|---|---|---|"]
     colors = [BLUE, ORANGE, "#1baf7a", "#eda100", MAGENTA, GREEN]  # palette slots 1-6, fixed order
     markers = ["o", "s", "^", "D", "v", "P"]
     fig, ax = plt.subplots(figsize=(6.4, 3.9))
@@ -526,7 +566,9 @@ def memory_part(out):
         runs = probe[d]
         beta = np.mean([r["beta_by_age"] for r in runs], 0)
         out.append(f"| {TITLES[d]} | {np.mean([r['test'] for r in runs]):.1e} | {np.mean([r['total_weight'] for r in runs]):.2f} "
-                   f"| {np.mean([r['effective_pairs'] for r in runs]):.1f} | {beta[0]:.2f} | {beta[:3].sum():.2f} |")
+                   f"| {np.mean([r['effective_pairs'] for r in runs]):.1f} | {beta[0]:.2f} | {beta[:3].sum():.2f} "
+                   + (f"| {np.median([r['prior_precision_median'] for r in runs]):.0e} | {np.median([r['cond_median'] for r in runs]):.0e} "
+                      f"| {np.max([r['cond_max'] for r in runs]):.0e} |" if "cond_median" in runs[0] else "| – | – | – |"))
         ax.plot(np.arange(1, len(beta) + 1), np.maximum(beta, 1e-6), color=color, marker=marker, markersize=4.5, linewidth=1.8,
                 label=TITLES[d])
     out.append("")
@@ -545,6 +587,7 @@ def main():
     out = []
     timeseries_part(out)
     memory_part(out)
+    cost_part(out)
     family_part(out)
     shots_part(out)
     solar_part(out)

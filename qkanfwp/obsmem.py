@@ -76,6 +76,11 @@ class ObsMemConfig:
     # phi(u) = a * base(u) + r . n(u).  'none' | 'identity' | 'silu'
     base: str = "identity"
     quantum: bool = True  # False: drop the Bloch features (classical control, needs base != 'none')
+    # Classical replacement of the Bloch features when ``quantum`` is False: three
+    # trainable features per hidden unit, tanh(w u + b) or cos(w u + b), read by
+    # exactly the same memory.  'none' keeps only the base (linear) term.
+    classical: str = "none"  # 'none' | 'tanh' | 'fourier'
+    precision: str = "float64"  # 'float32': features, statistics and the solve in single precision
     # Tangent features u * d n / d u (reps = 1 only): the first-order effect of
     # changing the frequency w of the data-encoding gate RZ(w u) around w = 1, so
     # the context can also adapt the frequency of each circuit, still by a
@@ -140,7 +145,11 @@ class PooledTokenizer(nn.Module):
 
 
 class ObservableMemoryFWP(nn.Module):
-    """Scalar series ``(B, T, 1)`` -> prediction of the next ``d_out`` values (float64)."""
+    """Scalar series ``(B, T, 1)`` -> prediction of the next ``d_out`` values.
+
+    Tokens and in-context targets are always formed in float64 (as in the other
+    models of this repository); features, statistics and the solve use
+    ``cfg.precision``."""
 
     def __init__(self, cfg: ObsMemConfig):
         super().__init__()
@@ -153,15 +162,25 @@ class ObservableMemoryFWP(nn.Module):
             self.tokenizer = Tokenizer(1, cfg.context, cfg.context_mode, dtype="float64", keep_dtype=True,
                                        pad=cfg.token_pad)
         h = cfg.hidden
+        self.dtype = {"float64": torch.float64, "float32": torch.float32}[cfg.precision]
         self.enc = nn.Linear(cfg.context, h)
+        nonlinear = cfg.quantum
         if cfg.quantum:
+            if cfg.classical != "none":
+                raise ValueError("classical features replace the Bloch features: set quantum=False")
             self.theta = nn.Parameter(torch.empty(1, h, cfg.reps + 1, 2))
             nn.init.xavier_normal_(self.theta)
+        elif cfg.classical in ("tanh", "fourier"):
+            nonlinear = True
+            self.cl_w = nn.Parameter(torch.empty(h, 3).normal_(1.0, 0.5))
+            self.cl_b = nn.Parameter(torch.empty(h, 3).uniform_(-math.pi, math.pi))
+        elif cfg.classical != "none":
+            raise ValueError(cfg.classical)
         elif cfg.base == "none":
-            raise ValueError("a model without Bloch features needs a base activation")
+            raise ValueError("a model without nonlinear features needs a base activation")
         if cfg.tangent and not (cfg.quantum and cfg.reps == 1):
             raise ValueError("tangent features need Bloch features and reps == 1")
-        self.n_feat = 1 + (h if cfg.base != "none" else 0) + (3 * h if cfg.quantum else 0) + (3 * h if cfg.tangent else 0)
+        self.n_feat = 1 + (h if cfg.base != "none" else 0) + (3 * h if nonlinear else 0) + (3 * h if cfg.tangent else 0)
         f = self.n_feat
         self.n_out = cfg.out_basis or cfg.d_out  # regression outputs per pair
         # prior / static observable: one coefficient per feature (and per output)
@@ -184,7 +203,7 @@ class ObservableMemoryFWP(nn.Module):
                 self.gate_b = nn.Parameter(torch.tensor(math.log(tau - 1.0)))
             elif cfg.gate != "none":
                 raise ValueError(cfg.gate)
-        self.double()
+        self.to(self.dtype)
 
     # ------------------------------------------------------------------
     @torch.no_grad()
@@ -212,11 +231,18 @@ class ObservableMemoryFWP(nn.Module):
             parts.append(F.silu(u))
         elif cfg.base != "none":
             raise ValueError(cfg.base)
+        # with finite shots a circuit shares its budget with its parameter-shifted copies
+        copies = 3 if cfg.tangent else 1
         if cfg.quantum:
-            parts.append(daruan_bloch(u, self.theta).flatten(-3))
+            parts.append(daruan_bloch(u, self.theta, circuit_copies=copies).flatten(-3))
+        elif cfg.classical == "tanh":
+            parts.append(torch.tanh(u[..., None] * self.cl_w + self.cl_b).flatten(-2))
+        elif cfg.classical == "fourier":
+            parts.append(torch.cos(u[..., None] * self.cl_w + self.cl_b).flatten(-2))
         if cfg.tangent:
             shift = 0.5 * math.pi
-            dn = 0.5 * (daruan_bloch(u + shift, self.theta) - daruan_bloch(u - shift, self.theta))  # d n / d u
+            dn = 0.5 * (daruan_bloch(u + shift, self.theta, circuit_copies=copies)
+                        - daruan_bloch(u - shift, self.theta, circuit_copies=copies))  # d n / d u
             parts.append((u[..., None, :, None] * dn).flatten(-3))
         return torch.cat(parts, -1)
 
@@ -258,7 +284,7 @@ class ObservableMemoryFWP(nn.Module):
         return seg[..., -cfg.d_out:]
 
     def _to_outputs(self, y: torch.Tensor) -> torch.Tensor:
-        return y @ self.basis_pinv.T if self.cfg.out_basis else y
+        return y @ self.basis_pinv.T.to(y.dtype) if self.cfg.out_basis else y
 
     def _context_pairs_multistep(self, x: torch.Tensor):
         cfg = self.cfg
@@ -273,12 +299,12 @@ class ObservableMemoryFWP(nn.Module):
             t = t[t >= need - 1]
         tok = self.tokenizer(x)
         last = torch.tensor([t_len - 1], device=x.device)
-        k = self.features(tok[:, torch.cat([t, last])])  # features of the written tokens, then the query
+        k = self.features(tok[:, torch.cat([t, last])].to(self.dtype))  # features of the written tokens, then the query
         if len(t):
             future = s[:, t[:, None] + 1 + torch.arange(h, device=x.device)[None, :]]  # what followed token t
-            z = self._to_outputs(future - self._anchor(s, t)) / self.y_scale
+            z = (self._to_outputs(future - self._anchor(s, t)) / self.y_scale.double()).to(self.dtype)
         else:
-            z = s.new_zeros(s.shape[0], 0, self.n_out)
+            z = s.new_zeros(s.shape[0], 0, self.n_out, dtype=self.dtype)
         return s, k, z, torch.ones(s.shape[0], len(t), dtype=torch.bool, device=x.device)
 
     def context_pairs(self, x: torch.Tensor):
@@ -287,11 +313,12 @@ class ObservableMemoryFWP(nn.Module):
         if cfg.d_out > 1:
             return self._context_pairs_multistep(x)
         s = x[..., 0].double()
-        k = self.features(self.tokenizer(x))  # (B, T, F)
+        k = self.features(self.tokenizer(x).to(self.dtype))  # (B, T, F)
         if cfg.skip == "last":
-            y_ctx = (s[:, 1:] - s[:, :-1]) / self.y_scale  # what followed token t
+            y_ctx = (s[:, 1:] - s[:, :-1]) / self.y_scale.double()  # what followed token t
         else:
-            y_ctx = s[:, 1:] / self.y_scale
+            y_ctx = s[:, 1:] / self.y_scale.double()
+        y_ctx = y_ctx.to(self.dtype)
         t = torch.arange(s.shape[1] - 1, device=x.device)
         need = cfg.min_context or cfg.context
         valid = (t >= need - 1) if cfg.mask_padded else torch.ones_like(t, dtype=torch.bool)
@@ -347,12 +374,22 @@ class ObservableMemoryFWP(nn.Module):
             if self.cfg.out_basis:
                 out = out @ self.basis.T
             last = torch.tensor([s.shape[1] - 1], device=x.device)
-            return out + self._anchor(s, last)[:, 0]
+            return out + self._anchor(s, last)[:, 0].to(self.dtype)
         r = self.fast_observable(k[:, :-1], y_ctx, valid)
         y = (k[:, -1] * r).sum(-1) * self.y_scale
         if self.cfg.skip == "last":
-            y = y + s[:, -1]
+            y = y + s[:, -1].to(self.dtype)
         return y[:, None]
+
+    @torch.no_grad()
+    def gram_matrix(self, x: torch.Tensor) -> torch.Tensor:
+        """``C_T = Lambda_0 + sum_t beta_t k_t k_t^T`` of every window, ``(B, F, F)``
+        (diagnostics: its condition number bounds the error amplification of
+        the read-out solve)."""
+        _, k, y_ctx, valid = self.context_pairs(x)
+        k_ctx = k[:, : y_ctx.shape[1]]
+        beta = self.memory_weights(k_ctx, valid)
+        return torch.einsum("bt,btf,btg->bfg", beta, k_ctx, k_ctx) + torch.diag_embed(self._prior_precision())
 
     # ------------------------------------------------------------------
     def statistics_recursion(self, x: torch.Tensor):

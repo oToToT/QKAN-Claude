@@ -28,22 +28,41 @@ from torch import nn
 INV_SQRT2 = 1.0 / math.sqrt(2.0)
 
 # Finite-shot simulation (experiments/shot_noise.py).  ``None`` = exact
-# expectation values.  With ``S`` shots every measured Pauli expectation ``v``
-# gets Gaussian noise of variance ``(1 - v^2) / S`` (binomial statistics of a
-# +-1 outcome).  Only the physical read-outs are affected; qkan's
-# ``fast_measure`` quantity |a| - |b| is not an expectation value.
+# expectation values.  Otherwise ``_SHOTS`` is the shot budget of ONE circuit
+# for ONE input (one edge, one token).  Non-commuting Pauli observables cannot
+# be read from the same shot, so a read-out that needs ``m`` measurement
+# settings (m = 1 for <Z>; m = 3 for the Bloch vector <X>, <Y>, <Z>; more with
+# parameter-shifted copies of the circuit) gets ``floor(_SHOTS / m)`` shots per
+# setting.  Every expectation ``v`` is then estimated from that many +-1
+# outcomes drawn from the exact binomial distribution.  Only physical
+# read-outs are affected; qkan's ``fast_measure`` quantity |a| - |b| is not an
+# expectation value.
 _SHOTS: float | None = None
 
 
 def set_shots(shots: float | None) -> None:
+    """Shot budget per circuit and input (``None`` = exact expectations)."""
     global _SHOTS
     _SHOTS = shots
 
 
-def _measure(v: torch.Tensor) -> torch.Tensor:
+def shots_per_setting(settings: int) -> int | None:
+    """Shots available to each of ``settings`` measurement settings of one circuit."""
     if _SHOTS is None:
+        return None
+    return max(int(_SHOTS // settings), 1)
+
+
+def _measure(v: torch.Tensor, settings: int = 1) -> torch.Tensor:
+    """Finite-shot estimate of the Pauli expectations ``v`` (each from its own
+    measurement setting).  The sampling error is treated as a constant in the
+    backward pass, so training with shots is possible."""
+    n = shots_per_setting(settings)
+    if n is None:
         return v
-    return v + torch.randn_like(v) * torch.sqrt((1.0 - v.detach() ** 2).clamp_min(0.0) / _SHOTS)
+    p = ((1.0 + v.detach()) * 0.5).clamp(0.0, 1.0)
+    k = torch.binomial(torch.full_like(p, float(n)), p)  # number of +1 outcomes
+    return v + (2.0 * k / n - 1.0 - v.detach())
 
 
 def _pz_amplitudes(x, theta, preact_w=None, preact_b=None):
@@ -117,6 +136,7 @@ def daruan_bloch(
     theta: torch.Tensor,
     preact_w: torch.Tensor | None = None,
     preact_b: torch.Tensor | None = None,
+    circuit_copies: int = 1,
 ) -> torch.Tensor:
     """Bloch vector ``(<X>, <Y>, <Z>)`` of the output state of every DARUAN
     circuit: ``(*batch, out, in, 3)``.
@@ -124,11 +144,15 @@ def daruan_bloch(
     The expectation of any single-qubit observable ``O = r0 I + r . sigma`` on
     the same circuit is ``r0 + r . bloch``, i.e. *linear* in the observable.
     ``bloch[..., 2]`` equals ``daruan_pz(..., fast_measure=False)``.
+
+    With finite shots the budget of the circuit is split over the three bases;
+    ``circuit_copies`` > 1 says that the same budget is also shared with that
+    many evaluations of the circuit (e.g. parameter-shifted copies).
     """
     a, b = _pz_amplitudes(x, theta, preact_w, preact_b)
     ab = torch.conj(a) * b
     z = a.real**2 + a.imag**2 - b.real**2 - b.imag**2
-    return _measure(torch.stack([2.0 * ab.real, 2.0 * ab.imag, z], -1))
+    return _measure(torch.stack([2.0 * ab.real, 2.0 * ab.imag, z], -1), settings=3 * circuit_copies)
 
 
 def theta_size(in_dim: int, out_dim: int, reps: int) -> int:

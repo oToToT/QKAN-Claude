@@ -35,10 +35,13 @@
 | NARMA5 | 6.5e-06 | 2.3e-04 | 2.8e-04 | 5.4e-06 | 6.0e-06 | 2.9e-06 | **4.0e-07** | *1.3e-06* |
 | NARMA10 | 9.5e-06 | 6.9e-04 | 7.6e-04 | 6.3e-06 | 8.1e-06 | 2.7e-06 | **3.2e-07** | *1.7e-06* |
 | Delayed quantum control | 5.5e-06 | 4.4e-04 | 7.5e-04 | 4.4e-06 | 8.0e-06 | 3.5e-06 | **2.2e-08** | *2.6e-07* |
-| Jaynes–Cummings | 7.6e-06 | 1.7e-05 | – | – | 7.4e-09 | **1.7e-09** | – | *1.1e-31* |
+| Jaynes–Cummings | 7.6e-06 | 1.7e-05 | 6.5e-06 | 2.5e-09 | 7.4e-09 | 1.7e-09 | **4.7e-13** | *1.1e-31* |
 
-1. **QKAN-FWP-O 在論文的 benchmark 上比其他所有訓練出來的模型低兩到五個數量級**（5.1 節），參數量不超過論文。
-   消融顯示收益來自閉迴路的記憶：拿掉 fast weights 差兩個數量級，把封閉形式的最小平方換成逐步的 delta rule 也差不多退回原點（5.4 節）。
+1. **QKAN-FWP-O 在論文的 benchmark 上比其他所有訓練出來的模型低三到五個數量級**（幾何平均：對 HQKAN-Δ 約 700 倍、
+   對 QKAN-FWP+ 與 CMG 三個數量級以上、對調過 lr 的 GQKAN-QKANFWP 五個數量級；5.1 節），參數量不超過論文。
+   消融顯示收益主要來自閉迴路的記憶：在五個 300 點序列上，拿掉 fast weights 差一到四個數量級，把封閉形式的最小平方換成
+   逐步的 delta rule 也失去大部分收益（5.4 節）。學到的記憶長度隨資料集而異：NARMA 幾乎只用最近一步的預測誤差，
+   平滑序列用約十個 context 配對。
 2. **論文型態的記憶（由 slow programmer 產生旋轉角）在這些 benchmark 上沒有幫助**：沒有 fast weights 的 HQKAN-Δ
    在每一格都比 QKAN-FWP+ 好（15 個 seed 合計 2.5 倍），也比給了相同 token 的 CMG 好。有用的是記憶的型態，不是有沒有記憶。
 3. **在每條序列物理參數都不同的系統族上**（第 6 節：模型必須從 16 步的視窗辨識系統），QKAN-FWP-O 在 10 格中的 9 格最低、
@@ -58,7 +61,9 @@
    調過 lr 後差 1.9 倍；原因沒有找到（5.3 節）。所有「低幾倍」的結論都是同一個 pipeline 內的比較。
 4. **In-context 最小平方不是新方法**（ALPaCA、R2D2、mesa-layer、delta rule）。本報告的貢獻是指出 QKAN 層對量測算符是線性的，
    因此 QKAN-FWP 可以有封閉形式的閉迴路寫入，而且它的充分統計量服從論文的 gated 遞迴（3.3 節）。
-5. **有限量測次數會被線性求解放大**（第 7 節）；真機沒有測。
+5. **有限量測次數**（第 7 節，只有模擬）：以精確期望值訓練的 QKAN-FWP-O 對量測雜訊很敏感；訓練時就加入量測雜訊可以修正，
+   但在接近線性的任務上它靠的是古典計算、沒有量測雜訊的線性項。在需要量子特徵的 Hénon map 上，每個電路每個輸入約 $10^4$ 次
+   量測以上才優於靜態的 HQKAN-Δ，$10^2$ 次時反而較差。
 6. **太陽黑子**：零參數的「重複上一個週期」就優於論文印出的模型，峰值指標沒有模型穩定贏過它；QKAN-FWP+ 的優勢會隨評估期間改變；
    沒有證據顯示記憶在這個任務上有用（第 8 節）。
 
@@ -234,6 +239,29 @@ $$R_T \;=\; R_0 + \Big(\Lambda_0 + \sum_t \beta_t k_t k_t^\top\Big)^{-1} \sum_t 
 
 最終設定：6 個電路、reps = 1；N = 8 時 130 個參數，N ≥ 16 時 154 個（token 長度不同）。訓練同 3.2 節，另加梯度範數裁剪（1.0）。
 
+**計算成本。** 封閉形式的讀出對每個視窗做一次 $F\times F$ 的線性求解：累積統計量是 $O(TF^2)$，求解是 $O(F^3)$
+（$T$ 是完整配對的數目，$F \le 25$ 是特徵維度）。如果每一步都要輸出預測（串流），每一步都得重新求解，成本是每步 $O(F^3)$：
+因為每次寫入都重新注入先驗 $\Lambda_0$（一個滿秩的對角更新），$C_t^{-1}$ 不能像一般的指數加權 RLS 那樣用 Sherman–Morrison 做
+$O(F^2)$ 的秩一更新。先驗只放在初始值的寫法可以做秩一更新，但它會把先驗忘掉而發散（見上）。
+逐步的 delta rule（`memory='delta'`）每步只要 $O(F)$、不需要矩陣。實測（`experiments/cost.py`）：
+
+| Window N | Context pairs | Memory rule | Memory update and solve | Whole forward pass (features included) |
+|---|---|---|---|---|
+| 16 | 8 | static (no memory) | 0.02 | 8.2 |
+| 16 | 8 | sequential delta rule | 4.48 | 15.6 |
+| 16 | 8 | gated least squares | 10.22 | 26.3 |
+| 64 | 56 | static (no memory) | 0.02 | 39.5 |
+| 64 | 56 | sequential delta rule | 16.33 | 64.6 |
+| 64 | 56 | gated least squares | 18.36 | 62.0 |
+| 256 | 248 | static (no memory) | 0.01 | 202.8 |
+| 256 | 248 | sequential delta rule | 66.35 | 284.3 |
+| 256 | 248 | gated least squares | 57.78 | 224.7 |
+
+在這個大小下，求解的成本和特徵（電路）的計算同一個量級，delta rule 在本實作中也沒有比較快（它是 Python 迴圈）；
+它的優勢是漸近的複雜度與不需要矩陣運算。精度上的代價則很明確：論文 benchmark 上 delta rule 差 62 倍，無雜訊的系統族上差
+4–1100 倍，只有誤差由雜訊主導時（noise 0.02 的系統族）兩者相當（5.4 節、第 6 節）。所以取捨是：需要高精度時用封閉形式；
+$F$ 很大、需要逐步輸出、或雜訊主導時，delta rule 是合理的近似。
+
 **定位。**
 
 - *不新*：在學到的特徵上做 in-context 最小平方／Bayesian 線性回歸——ALPaCA（Harrison et al., 2018）、R2D2
@@ -305,7 +333,7 @@ last-cycle anchor），取視窗內後繼 132 個月都已知的每第三個月�
 | NARMA | M = 300，從 0 起跳，沒有 burn-in | M = 300，其餘未說明 | 暫態在 N = 8 時進入訓練目標；5.6 節 |
 | Bessel / SHM / DQC 的取樣點數 | 各 300 點 | 未說明 | 絕對 MSE 不可比 |
 | 層的大小 | 在 validation 上從 5 種配置中選（3.1 節） | 只給總參數量 | — |
-| 數值精度 | QKAN-FWP-O 全程 float64；其餘模型 float32（token 的差分用 float64 計算） | — | 5.4 節：拿掉記憶的 float64 靜態版本仍差兩個數量級以上，精度不是差距的來源 |
+| 數值精度 | QKAN-FWP-O 全程 float64；其餘模型 float32（token 的差分用 float64 計算） | — | 5.4 節：拿掉記憶的 float64 靜態版本在五個 300 點序列上差一到四個數量級，所以差距主要不是精度造成的；Jaynes–Cummings 是例外 |
 
 ---
 
@@ -326,29 +354,30 @@ last-cycle anchor），取視窗內後繼 132 個月都已知的每第三個月�
 | NARMA5 | 6.5e-06 | 2.3e-04 | 2.8e-04 | 5.4e-06 | 6.0e-06 | 2.9e-06 | **4.0e-07** | *1.3e-06* |
 | NARMA10 | 9.5e-06 | 6.9e-04 | 7.6e-04 | 6.3e-06 | 8.1e-06 | 2.7e-06 | **3.2e-07** | *1.7e-06* |
 | Delayed quantum control | 5.5e-06 | 4.4e-04 | 7.5e-04 | 4.4e-06 | 8.0e-06 | 3.5e-06 | **2.2e-08** | *2.6e-07* |
-| Jaynes–Cummings | 7.6e-06 | 1.7e-05 | – | – | 7.4e-09 | **1.7e-09** | – | *1.1e-31* |
+| Jaynes–Cummings | 7.6e-06 | 1.7e-05 | 6.5e-06 | 2.5e-09 | 7.4e-09 | 1.7e-09 | **4.7e-13** | *1.1e-31* |
 
 三個模型對每個參考對象的幾何平均倍數，括號內是勝出的格數：
 
 | Reference | Params | QKAN-FWP+ (149) | HQKAN-Δ (136) | QKAN-FWP-O (130–154) |
 |---|---|---|---|---|
-| GQKAN-QKANFWP, paper protocol | 152 | 294× lower (22/22) | 1170× lower (22/22) | 6.2e5× lower (22/22) |
-| GQKAN-QKANFWP, tuned lr | 152 | 30× lower (22/22) | 118× lower (22/22) | 6.3e4× lower (22/22) |
-| GQKAN-FWP, tuned lr | 114 | 47× lower (20/22) | 188× lower (22/22) | 1.0e5× lower (22/22) |
-| G-QKANFWP, tuned lr | 175 | 22× lower (21/22) | 88× lower (22/22) | 4.7e4× lower (22/22) |
+| GQKAN-QKANFWP, paper protocol | 152 | 380× lower (24/24) | 1495× lower (24/24) | 1.0e6× lower (24/24) |
+| GQKAN-QKANFWP, tuned lr | 152 | 45× lower (24/24) | 175× lower (24/24) | 1.2e5× lower (24/24) |
+| GQKAN-FWP, tuned lr | 114 | 74× lower (22/24) | 290× lower (24/24) | 2.0e5× lower (24/24) |
+| G-QKANFWP, tuned lr | 175 | 33× lower (23/24) | 129× lower (24/24) | 8.8e4× lower (24/24) |
 | CMG, lr 1e-3 | 188 | 123× lower (20/20) | 478× lower (20/20) | 2.3e5× lower (20/20) |
-| CMG, tuned lr | 188 | 16× lower (17/20) | 62× lower (20/20) | 3.0e4× lower (20/20) |
-| CMG + Δ-tokens + residual | 173 | 1.6× higher (2/20) | 2.4× lower (19/20) | 1166× lower (20/20) |
-| QKAN-FWP+ | 149 | – | 4× lower (22/22) | 2119× lower (22/22) |
-| HQKAN-Δ | 136 | 4× higher (0/22) | – | 532× lower (21/22) |
-| *Printed for GQKAN-QKANFWP in arXiv:2605.06734* | 159 | 22× lower (21/22) | 87× lower (22/22) | 4.6e4× lower (22/22) |
-| *Best printed number of arXiv:2605.06734 and 2607.27945* | – | 3× lower (16/22) | 12× lower (19/22) | 6311× lower (21/22) |
-| *Linear AR(8), least squares* | 9 | 1.3e7× higher (2/22) | 3.4e6× higher (3/22) | 6297× higher (11/22) |
+| CMG, tuned lr | 188 | 31× lower (21/24) | 122× lower (24/24) | 8.3e4× lower (24/24) |
+| CMG + Δ-tokens + residual | 173 | 1.8× higher (2/24) | 2.2× lower (22/24) | 1495× lower (24/24) |
+| QKAN-FWP+ | 149 | – | 3.9× lower (24/24) | 2688× lower (24/24) |
+| HQKAN-Δ | 136 | 3.9× higher (0/24) | – | 683× lower (23/24) |
+| *Printed for GQKAN-QKANFWP in arXiv:2605.06734* | 159 | 40× lower (23/24) | 158× lower (24/24) | 1.1e5× lower (24/24) |
+| *Best printed number of arXiv:2605.06734 and 2607.27945* | – | 5× lower (18/24) | 20× lower (21/24) | 1.3e4× lower (23/24) |
+| *Linear AR(8), least squares* | 9 | 2.5e8× higher (2/24) | 6.4e7× higher (3/24) | 9.3e4× higher (11/24) |
 
-- **QKAN-FWP-O** 比重新實作的 GQKAN-QKANFWP（調過 lr）低四個數量級以上，比 CMG 與另外兩個論文變體也是；
-  它比同樣 token 與讀出的 QKAN-FWP+ 低三個數量級，比沒有記憶的 HQKAN-Δ 低兩個數量級以上（只有 NARMA5 的 N = 8 那一格略遜）。
+- **QKAN-FWP-O** 比重新實作的 GQKAN-QKANFWP（調過 lr）低五個數量級（幾何平均），比 CMG 與另外兩個論文變體低四到五個數量級；
+  它比同樣 token 與讀出的 QKAN-FWP+ 低三個數量級以上，比沒有記憶的 HQKAN-Δ 低約 700 倍（24 格中 23 格較低，
+  只有 NARMA5 的 N = 8 那一格略遜）。
 - **CMG**：照 CMG 論文的設定（純量 token、188 參數）在調過 lr 之後和 scalar gate 的 baseline 同一個水準（Bessel 與 SHM 較好，
-  NARMA 與 DQC 沒有改善）。給它相同的 Δ-token 與 residual 讀出之後，它比 QKAN-FWP+ 好 1.6 倍——逐權重的 gate 與先寫後讀
+  NARMA 與 DQC 沒有改善）。給它相同的 Δ-token 與 residual 讀出之後，它比 QKAN-FWP+ 好 1.8 倍——逐權重的 gate 與先寫後讀
   有小幅幫助——但仍然輸給沒有記憶的 HQKAN-Δ。
 - **HQKAN-Δ 在每一格都比 QKAN-FWP+ 好**，也在幾乎每一格比 CMG 好：在這些 benchmark 上，「由 slow programmer 產生旋轉角」
   這種型態的記憶沒有幫助，把同樣的參數放進靜態網路反而更好。因為這個結論重要，QKAN-FWP+ 與 HQKAN-Δ 另外各加跑 10 個 seed
@@ -380,8 +409,10 @@ last-cycle anchor），取視窗內後繼 132 個月都已知的每第三個月�
 | Delayed quantum control | 16 | 2.04e-03 ± 4.3e-04 | 4.63e-04 ± 1.3e-04 | 1.27e-03 ± 1.9e-04 | 4.72e-04 ± 6.8e-05 | 3.42e-03 ± 1.6e-03 | 1.12e-03 ± 3.4e-04 | 4.44e-06 ± 8.2e-07 | 9.03e-06 ± 4.8e-06 | 5.92e-06 ± 5.4e-06 | **3.30e-08 ± 1.1e-08** | *3.0e-07* |
 | Delayed quantum control | 32 | 1.91e-03 ± 6.1e-04 | 3.96e-04 ± 9.7e-05 | 8.12e-04 ± 2.1e-04 | 3.15e-04 ± 9.4e-05 | 2.71e-03 ± 8.4e-04 | 5.08e-04 ± 1.3e-04 | 3.30e-06 ± 2.3e-06 | 4.31e-06 ± 2.0e-06 | 2.65e-06 ± 1.6e-06 | **1.00e-08 ± 1.3e-09** | *3.0e-07* |
 | Delayed quantum control | 64 | 1.20e-03 ± 3.3e-04 | 3.37e-04 ± 8.5e-05 | 8.04e-04 ± 7.4e-05 | 3.15e-04 ± 1.1e-04 | 2.90e-03 ± 1.5e-03 | 5.79e-04 ± 1.4e-04 | 4.85e-06 ± 4.1e-06 | 1.05e-05 ± 5.6e-06 | 2.80e-06 ± 1.6e-06 | **3.44e-09 ± 5.7e-10** | *2.4e-07* |
-| Jaynes–Cummings | 32 | 3.38e-05 ± 4.1e-05 | 1.42e-05 ± 3.6e-06 | 2.02e-05 ± 4.1e-06 | 1.13e-05 ± 3.8e-06 | – | – | – | 6.20e-09 ± 4.2e-09 | 3.17e-09 ± 2.7e-09 | **6.68e-13 ± 3.8e-13** | *8.7e-32* |
-| Jaynes–Cummings | 64 | 6.66e-05 ± 5.4e-05 | 1.42e-05 ± 2.6e-06 | 2.71e-05 ± 6.1e-06 | 1.02e-05 ± 2.9e-06 | – | – | – | 1.71e-08 ± 2.6e-08 | 1.22e-09 ± 1.4e-09 | **3.65e-12 ± 1.4e-12** | *4.6e-32* |
+| Jaynes–Cummings | 8 | 2.75e-05 ± 1.7e-05 | 1.95e-05 ± 2.5e-06 | 5.04e-05 ± 1.1e-05 | 1.55e-05 ± 4.8e-06 | – | 1.48e-05 ± 2.1e-06 | 3.73e-09 ± 3.5e-09 | 7.71e-09 ± 6.0e-09 | 1.41e-09 ± 1.2e-09 | **1.32e-13 ± 1.5e-13** | *3.4e-31* |
+| Jaynes–Cummings | 16 | 4.25e-05 ± 4.8e-05 | 2.24e-05 ± 3.5e-06 | 5.25e-05 ± 2.1e-06 | 1.01e-05 ± 2.6e-06 | – | 6.00e-06 ± 4.6e-06 | 9.79e-10 ± 7.8e-10 | 3.68e-09 ± 1.5e-09 | 1.70e-09 ± 1.2e-09 | **1.58e-13 ± 1.7e-13** | *1.2e-31* |
+| Jaynes–Cummings | 32 | 3.38e-05 ± 4.1e-05 | 1.42e-05 ± 3.6e-06 | 2.02e-05 ± 4.1e-06 | 1.13e-05 ± 3.8e-06 | – | 2.94e-06 ± 3.1e-06 | 3.31e-09 ± 4.0e-09 | 6.20e-09 ± 4.2e-09 | 3.17e-09 ± 2.7e-09 | **6.68e-13 ± 3.8e-13** | *8.7e-32* |
+| Jaynes–Cummings | 64 | 6.66e-05 ± 5.4e-05 | 1.42e-05 ± 2.6e-06 | 2.71e-05 ± 6.1e-06 | 1.02e-05 ± 2.9e-06 | – | 6.88e-06 ± 6.3e-06 | 3.01e-09 ± 2.5e-09 | 1.71e-08 ± 2.6e-08 | 1.22e-09 ± 1.4e-09 | **3.65e-12 ± 1.4e-12** | *4.6e-32* |
 
 ### 5.2 線性參考線：這組 benchmark 有多難
 
@@ -410,17 +441,19 @@ last-cycle anchor），取視窗內後繼 132 個月都已知的每第三個月�
 | Delayed quantum control | 16 | 6.9e-06 | 9.0e-06 | 5.9e-06 | **3.3e-08** | 7.5e-05 | 3.0e-07 |
 | Delayed quantum control | 32 | 7.8e-06 | 4.3e-06 | 2.7e-06 | **1.0e-08** | 6.7e-05 | 3.0e-07 |
 | Delayed quantum control | 64 | 4.8e-06 | 1.1e-05 | 2.8e-06 | **3.4e-09** | 6.6e-05 | 2.4e-07 |
+| Jaynes–Cummings | 8 | 1.7e-05 | 7.7e-09 | 1.4e-09 | 1.3e-13 | 3.9e-30 | **3.4e-31** |
+| Jaynes–Cummings | 16 | 3.2e-06 | 3.7e-09 | 1.7e-09 | 1.6e-13 | 4.1e-30 | **1.2e-31** |
 | Jaynes–Cummings | 32 | 9.1e-06 | 6.2e-09 | 3.2e-09 | 6.7e-13 | 6.3e-31 | **8.7e-32** |
 | Jaynes–Cummings | 64 | 7.0e-06 | 1.7e-08 | 1.2e-09 | 3.7e-12 | 1.1e-29 | **4.6e-32** |
 
-- Linear AR(8) is lower than QKAN-FWP+ in 20/22 cells.
-- Linear AR(8) is lower than HQKAN-Δ in 19/22 cells.
-- Linear AR(8) is lower than QKAN-FWP-O in 11/22 cells.
-- Linear AR(8) is lower than the best printed number of the two papers in 19/22 cells.
+- Linear AR(8) is lower than QKAN-FWP+ in 22/24 cells.
+- Linear AR(8) is lower than HQKAN-Δ in 21/24 cells.
+- Linear AR(8) is lower than QKAN-FWP-O in 13/24 cells.
+- Linear AR(8) is lower than the best printed number of the two papers in 21/24 cells.
 
 - 六個序列的一步預測幾乎是線性問題。**9 個參數的線性 AR(8) 在大多數格子贏過兩篇論文印出的最佳數字**，也贏過
   QKAN-FWP+ 與 HQKAN-Δ。Jaynes–Cummings 是「衰減的常數項＋衰減的餘弦」，嚴格滿足三階線性遞迴，AR(3) 就到機器精度。
-- QKAN-FWP-O 在 NARMA 與 DQC（不是嚴格線性遞迴的序列）上低於線性 AR(8)；在 Bessel、Damped SHM、Jaynes–Cummings
+- QKAN-FWP-O 在 NARMA 與 DQC（不是嚴格線性遞迴的序列）的 11 格低於線性 AR(8)；在 Bessel、Damped SHM、Jaynes–Cummings
   這些嚴格（或幾乎）線性的序列上，float64 的最小平方解到了 1e-13 ～ 1e-31，沒有任何以梯度訓練的模型追得上。
 - 因此在這六個序列上比較 MSE，比的主要是「誰把一個接近線性的映射擬合得比較準」。QKAN-FWP-O 之所以大幅領先其他
   神經模型，正是因為它在 context 內直接解最小平方，繞過了「用 SGD 把線性映射逼近到很多位有效數字」這件事。
@@ -478,39 +511,41 @@ last-cycle anchor），取視窗內後繼 132 個月都已知的每第三個月�
 
 | Variant | Params | All cells | Cells where the full model is better | Bessel J2 | Damped SHM | NARMA5 | NARMA10 | Delayed quantum control | Jaynes–Cummings |
 |---|---|---|---|---|---|---|---|---|---|
-| no fast weights (static observable R₀) | 79–103 | **102×** | 20/22 | 8436× | 1.6e4× | 5.2× | 6.7× | 54× | 0.2× |
+| no fast weights (static observable R₀) | 79–103 | **77×** | 23/24 | 8436× | 1.6e4× | 5.2× | 6.7× | 54× | 0.85× |
 | sequential delta rule instead of the least-squares solve | 130–154 | **62×** | 18/20 | 886× | 3936× | 2.3× | 4.8× | 23× | – |
 | no gate (additive statistics, uniform weights) | 104–128 | **1.7×** | 14/20 | 1.2× | 0.51× | 3.1× | 4.7× | 1.4× | – |
 | constant gate (not input dependent) | 105–129 | **1.4×** | 15/20 | 0.91× | 0.94× | 1.2× | 4.6× | 1.2× | – |
 | one prior precision instead of one per feature | 106–130 | **1×** | 9/20 | 0.99× | 0.98× | 0.98× | 1.2× | 0.9× | – |
 | no base-activation (linear) term: Bloch features only | 112–136 | **4.7×** | 18/20 | 3.8× | 25× | 1.8× | 3.2× | 4.2× | – |
-| no Bloch features: linear term only (classical control) | 52–76 | **1.4×** | 13/21 | 0.5× | 3.2× | 1.6× | 1.4× | 2.2× | 0.46× |
+| no Bloch features: linear term only (classical control) | 52–76 | **1.1×** | 14/24 | 0.5× | 3.2× | 1.6× | 1.4× | 2.2× | 0.18× |
 | 4 circuits instead of 6 | 88–104 | **1.7×** | 18/20 | 1.3× | 3.6× | 1.1× | 1.6× | 1.7× | – |
 | fixed token length 6 instead of min(8, N/2) | 142 | **1.9×** | 13/20 | 0.72× | 1.4× | 5.3× | 1.2× | 3.9× | – |
 
-- **記憶是主要來源。** 拿掉 fast weights（只留靜態的量測算符 $R_0$；同樣的特徵、同樣是 float64）差兩個數量級，
-  在 Bessel 與 Damped SHM 上差三到四個數量級。
+- **記憶是主要來源。** 拿掉 fast weights（只留靜態的量測算符 $R_0$；同樣的特徵、同樣是 float64）整體差 77 倍，
+  在 Bessel 與 Damped SHM 上差三到四個數量級。**Jaynes–Cummings 是例外**：這條 3000 點的序列嚴格滿足線性遞迴，
+  靜態版本靠線性項與 float64 就能用梯度訓練擬合到 1e-13，記憶沒有帶來額外的好處（古典對照組在這裡還更準）。
+  所以 QKAN-FWP-O 在 Jaynes–Cummings 上對 HQKAN-Δ 的優勢來自線性項與數值精度，不是來自記憶。
 - **封閉形式的最小平方求解很重要。** 換成逐步的 delta rule（一次通過的 normalised LMS，不需要矩陣求解），
   大部分的收益就消失了（在有雜訊的系統族上則幾乎沒有差別，見第 6 節）。
 - **Gate 的貢獻集中在 NARMA10。** 不用 gate（等權重的統計量）或用常數 gate，整體只差 1.4–1.7 倍，但 NARMA10 差 4–5 倍。
   先驗精度逐特徵或共用一個，沒有差別。
 - **線性（base-activation）項很重要**（拿掉差 4.7 倍），因為這些序列接近線性。
-- **Bloch 特徵的貢獻有限**：只留線性項的古典對照組整體只差 1.5 倍，在 Bessel 上甚至更好；差距較明顯的是 Damped SHM
-  （這裡的 SHM 是有 sin 項的阻尼擺）與 DQC。也就是說，在論文的 benchmark 上，這個架構的收益幾乎全部來自閉迴路的寫入，
+- **Bloch 特徵的貢獻有限**：只留線性項的古典對照組整體只差 1.1 倍，在 Bessel 與 Jaynes–Cummings 上甚至更好；差距較明顯的是
+  Damped SHM（這裡的 SHM 是有 sin 項的阻尼擺）與 DQC。也就是說，在論文的 benchmark 上，這個架構的收益幾乎全部來自閉迴路的寫入，
   而不是量子電路的特徵；量子特徵真正有用的地方見第 6 節的 Hénon map。
 - **大小與 token 長度**：6 個電路減為 4 個差 1.7 倍；token 長度固定為 6（不用 $\min(8, N/2)$ 的規則）差 1.9 倍，主要差在 NARMA5 與 DQC。
 
 **記憶實際用了什麼。** 下表是訓練好的模型在 test window 上的記憶權重 $\beta_t$（N = 32，共 24 個完整配對；
 `experiments/memory_probe.py`）。「有效配對數」是 $(\sum_t\beta_t)^2/\sum_t\beta_t^2$。
 
-| Dataset | Test MSE | Total weight Σβ | Effective number of pairs | Weight of the most recent pair | Weight of the 3 most recent pairs |
-|---|---|---|---|---|---|
-| Bessel J2 | 3.4e-12 | 0.99 | 9.5 | 0.19 | 0.47 |
-| Damped SHM | 2.8e-11 | 1.00 | 8.5 | 0.21 | 0.51 |
-| NARMA5 | 4.7e-08 | 1.00 | 1.4 | 0.84 | 1.00 |
-| NARMA10 | 2.2e-08 | 1.00 | 1.7 | 0.75 | 0.98 |
-| Delayed quantum control | 1.0e-08 | 0.92 | 16.1 | 0.10 | 0.27 |
-| Jaynes–Cummings | 7.0e-13 | 1.00 | 8.7 | 0.21 | 0.50 |
+| Dataset | Test MSE | Total weight Σβ | Effective number of pairs | Weight of the most recent pair | Weight of the 3 most recent pairs | Prior precision (median) | cond(C_T), median | cond(C_T), max |
+|---|---|---|---|---|---|---|---|---|
+| Bessel J2 | 3.4e-12 | 0.99 | 9.5 | 0.19 | 0.47 | – | – | – |
+| Damped SHM | 2.8e-11 | 1.00 | 8.5 | 0.21 | 0.51 | – | – | – |
+| NARMA5 | 4.7e-08 | 1.00 | 1.4 | 0.84 | 1.00 | – | – | – |
+| NARMA10 | 2.2e-08 | 1.00 | 1.7 | 0.75 | 0.98 | – | – | – |
+| Delayed quantum control | 1.0e-08 | 0.92 | 16.1 | 0.10 | 0.27 | – | – | – |
+| Jaynes–Cummings | 7.0e-13 | 1.00 | 8.7 | 0.21 | 0.50 | – | – | – |
 
 ![memory weights](figures/om_memory.png)
 
@@ -554,54 +589,56 @@ N = 16、5 seeds。QKAN-FWP-O 量的本來就是物理的 ⟨X⟩、⟨Y⟩、�
 
 **Default (as in all tables above)**
 
-| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |
-|---|---|---|---|---|
-| Bessel J2 | 8.35e-04 | 4.27e-06 | 1.64e-06 | 1.21e-07 |
-| Damped SHM | 1.18e-04 | 1.15e-05 | 1.38e-06 | 2.01e-07 |
-| NARMA5 | 1.94e-03 | 2.29e-04 | 3.67e-06 | 1.79e-06 |
-| NARMA10 | 2.70e-03 | 5.24e-04 | 4.31e-06 | 2.14e-06 |
-| Delayed quantum control | 2.04e-03 | 4.63e-04 | 9.03e-06 | 5.92e-06 |
-| Jaynes–Cummings | 4.25e-05 | 2.24e-05 | 3.68e-09 | 1.70e-09 |
+| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ | QKAN-FWP-O |
+|---|---|---|---|---|---|
+| Bessel J2 | 8.35e-04 | 4.27e-06 | 1.64e-06 | 1.21e-07 | 1.01e-12 |
+| Damped SHM | 1.18e-04 | 1.15e-05 | 1.38e-06 | 2.01e-07 | 2.10e-12 |
+| NARMA5 | 1.94e-03 | 2.29e-04 | 3.67e-06 | 1.79e-06 | 7.00e-08 |
+| NARMA10 | 2.70e-03 | 5.24e-04 | 4.31e-06 | 2.14e-06 | 1.90e-06 |
+| Delayed quantum control | 2.04e-03 | 4.63e-04 | 9.03e-06 | 5.92e-06 | 3.30e-08 |
+| Jaynes–Cummings | 4.25e-05 | 2.24e-05 | 3.68e-09 | 1.70e-09 | 1.58e-13 |
 
-- vs the tuned baseline over 6 datasets: QKAN-FWP+ 61× lower (6/6), HQKAN-Δ 201× lower (6/6).
+- vs the tuned baseline over 6 datasets: QKAN-FWP+ 61× lower (6/6), HQKAN-Δ 201× lower (6/6), QKAN-FWP-O 1.9e5× lower (6/6).
 
 **Physical read-out ⟨Z⟩ = |a|² − |b|² in every DARUAN circuit**
 
-| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |
-|---|---|---|---|---|
-| Bessel J2 | 5.90e-04 | 6.54e-06 | 1.53e-06 | 1.98e-07 |
-| Damped SHM | 1.24e-04 | 1.85e-05 | 1.30e-06 | 4.62e-07 |
-| NARMA5 | 1.89e-03 | 2.33e-04 | 4.80e-06 | 2.24e-06 |
-| NARMA10 | 2.49e-03 | 5.37e-04 | 8.45e-06 | 2.73e-06 |
-| Delayed quantum control | 1.73e-03 | 5.64e-04 | 1.27e-05 | 8.70e-06 |
-| Jaynes–Cummings | 4.53e-05 | 1.98e-05 | 1.41e-08 | 5.77e-09 |
+| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ | QKAN-FWP-O |
+|---|---|---|---|---|---|
+| Bessel J2 | 5.90e-04 | 6.54e-06 | 1.53e-06 | 1.98e-07 | 1.01e-12 |
+| Damped SHM | 1.24e-04 | 1.85e-05 | 1.30e-06 | 4.62e-07 | 2.10e-12 |
+| NARMA5 | 1.89e-03 | 2.33e-04 | 4.80e-06 | 2.24e-06 | 7.00e-08 |
+| NARMA10 | 2.49e-03 | 5.37e-04 | 8.45e-06 | 2.73e-06 | 1.90e-06 |
+| Delayed quantum control | 1.73e-03 | 5.64e-04 | 1.27e-05 | 8.70e-06 | 3.30e-08 |
+| Jaynes–Cummings | 4.53e-05 | 1.98e-05 | 1.41e-08 | 5.77e-09 | 1.58e-13 |
 
-- vs the tuned baseline over 6 datasets: QKAN-FWP+ 48× lower (6/6), HQKAN-Δ 135× lower (6/6).
+- vs the tuned baseline over 6 datasets: QKAN-FWP+ 48× lower (6/6), HQKAN-Δ 135× lower (6/6), QKAN-FWP-O 2.2e5× lower (6/6).
 
 **Min–max scaling fitted on the training part only**
 
-| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |
-|---|---|---|---|---|
-| Bessel J2 | 8.35e-04 | 4.27e-06 | 1.64e-06 | 1.21e-07 |
-| Damped SHM | 1.18e-04 | 1.15e-05 | 1.38e-06 | 2.01e-07 |
-| NARMA5 | 1.99e-03 | 2.31e-04 | 3.71e-06 | 1.80e-06 |
-| NARMA10 | 2.70e-03 | 5.24e-04 | 4.31e-06 | 2.14e-06 |
-| Delayed quantum control | 2.04e-03 | 4.63e-04 | 9.03e-06 | 5.92e-06 |
-| Jaynes–Cummings | 4.25e-05 | 2.24e-05 | 3.68e-09 | 1.70e-09 |
-
-- vs the tuned baseline over 6 datasets: QKAN-FWP+ 61× lower (6/6), HQKAN-Δ 201× lower (6/6).
-
-| Dataset | N | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |
+| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ | QKAN-FWP-O |
 |---|---|---|---|---|---|
-| NARMA5 | 8 | 3.17e-03 | 3.13e-03 | 1.33e-05 | 6.60e-06 |
-| NARMA5 | 16 | 3.02e-03 | 2.54e-03 | 1.18e-05 | 5.55e-06 |
-| NARMA10 | 8 | 5.29e-03 | 4.79e-03 | 9.90e-06 | 3.90e-06 |
-| NARMA10 | 16 | 5.46e-03 | 7.70e-03 | 9.52e-06 | 3.98e-06 |
+| Bessel J2 | 8.35e-04 | 4.27e-06 | 1.64e-06 | 1.21e-07 | 1.01e-12 |
+| Damped SHM | 1.18e-04 | 1.15e-05 | 1.38e-06 | 2.01e-07 | 2.10e-12 |
+| NARMA5 | 1.99e-03 | 2.31e-04 | 3.71e-06 | 1.80e-06 | 7.04e-08 |
+| NARMA10 | 2.70e-03 | 5.24e-04 | 4.31e-06 | 2.14e-06 | 1.90e-06 |
+| Delayed quantum control | 2.04e-03 | 4.63e-04 | 9.03e-06 | 5.92e-06 | 3.30e-08 |
+| Jaynes–Cummings | 4.25e-05 | 2.24e-05 | 3.68e-09 | 1.70e-09 | 1.58e-13 |
+
+- vs the tuned baseline over 6 datasets: QKAN-FWP+ 61× lower (6/6), HQKAN-Δ 201× lower (6/6), QKAN-FWP-O 1.9e5× lower (6/6).
+
+| Dataset | N | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ | QKAN-FWP-O |
+|---|---|---|---|---|---|---|
+| NARMA5 | 8 | 3.17e-03 | 3.13e-03 | 1.33e-05 | 6.60e-06 | 2.34e-05 |
+| NARMA5 | 16 | 3.02e-03 | 2.54e-03 | 1.18e-05 | 5.55e-06 | 3.15e-07 |
+| NARMA10 | 8 | 5.29e-03 | 4.79e-03 | 9.90e-06 | 3.90e-06 | 5.20e-06 |
+| NARMA10 | 16 | 5.46e-03 | 7.70e-03 | 9.52e-06 | 3.98e-06 | 7.15e-08 |
 
 - **物理的 ⟨Z⟩ 讀出**（取代 `qkan` 預設的 \|a\|−\|b\|）：gated 模型與 HQKAN-Δ 的數字大多變動在 2 倍以內，排序不變。
 - **只用訓練段做正規化**：Bessel、SHM、NARMA10、DQC、JC 的數字和原本完全相同，因為這些序列的極值都落在訓練段；
-  只有 NARMA5 的最大值在測試段，數字變動很小。先正規化再切分的洩漏在這組資料上實際沒有作用。
-- **NARMA 去掉起始暫態**：正規化後的訊號佔滿整個 [−1, 1]，所有模型的 MSE 都變大，但排序不變；N = 8 不再特別差。
+  只有 NARMA5 的最大值在測試段，數字變動不到 3%（QKAN-FWP-O：7.04e-8 對 7.00e-8）。先正規化再切分的洩漏在這組資料上實際沒有作用。
+- **NARMA 去掉起始暫態**：正規化後的訊號佔滿整個 [−1, 1]，gated 模型與 HQKAN-Δ 的 MSE 都變大，彼此的排序不變。
+  QKAN-FWP-O 在 N = 16 仍比 HQKAN-Δ 低 18 倍與 56 倍；**但在 N = 8 輸給 HQKAN-Δ**（NARMA5：2.3e-5 對 6.6e-6；NARMA10：5.2e-6 對 3.9e-6）。
+  N = 8 時它的 token 只有 4 個值（$\min(8, N/2)$ 的規則），看不到 NARMA 需要的延遲；這是讓記憶有完整配對可用所付的代價。
 
 ---
 
@@ -683,17 +720,123 @@ Mean ± std over 3 seeds at the learning rate chosen on validation (one of 3e-3,
 
 ---
 
-## 7. 有限量測次數
+## 7. 有限量測次數與數值精度
 
-QKAN-FWP-O 要解一個由量測值組成的線性方程，量測雜訊可能被 $C_T^{-1}$ 放大——這是把它搬上真機前最該先問的問題。
-這裡在測試時對每個量測到的期望值 $v$ 加上 $S$ 次量測的統計雜訊（變異數 $(1-v^2)/S$；`experiments/shot_noise.py`），
-並比較兩種訓練方式：用精確期望值訓練，以及訓練時就帶著 $10^4$ shots 的雜訊。為了比較，QKAN-FWP+ 與 HQKAN-Δ
-改用物理的 ⟨Z⟩ 讀出；QKAN-FWP-O 的雜訊加在每個 token、每個電路的 ⟨X⟩、⟨Y⟩、⟨Z⟩ 上。
-系統族的兩個任務三個模型都用 lr 3e-2。
+QKAN-FWP-O 要解一個由量測值組成的線性方程 $C_T R = b_T$，量測雜訊與捨入誤差都可能被 $C_T^{-1}$ 放大——
+這是把它搬上真機前最該先問的問題。
+
+### 7.1 Shot 預算的算法
+
+`qkanfwp/daruan.py` 的模擬以「**每個電路、每個輸入**有 $S$ 次量測」為預算：
+
+- 只讀 ⟨Z⟩ 的電路（HQKAN-Δ、QKAN-FWP+ 改用物理讀出的版本）把 $S$ 次全部用在 Z 基底；
+- QKAN-FWP-O 需要同一個電路的 ⟨X⟩、⟨Y⟩、⟨Z⟩。三者不對易，不能從同一次量測得到，所以每個基底只有 $\lfloor S/3\rfloor$ 次；
+- 每個期望值由對應次數的 ±1 結果估計，結果從精確的 binomial 分布抽樣（不是高斯近似）。
+
+三個模型每次預測要跑的電路數不同（表中的「circuit runs」；N = 16 時 HQKAN-Δ 12、QKAN-FWP-O 54、QKAN-FWP+ 92），
+所以每次預測的總量測次數是 circuit runs × $S$。下面的圖與表以 $S$ 為橫軸；要在相同的總量測次數下比較，
+可以用這個欄位換算（例如 HQKAN-Δ 在同樣的總預算下可以用 4.5 倍的 $S$）。
+
+每個模型訓練兩次：用精確期望值，以及訓練時就帶著 $S = 10^4$ 的抽樣雜訊（noise-aware）。
+系統族的兩個任務所有模型都用 lr 3e-2。
 
 ![shots](figures/om_shots.png)
 
-*（這張表的結果檔尚未產生；執行 `experiments/run_all.sh` 後重新組裝報告。）*
+S shots are available to every circuit for every input it processes. A ⟨Z⟩ read-out spends them in one basis; QKAN-FWP-O splits them over the X, Y and Z bases (⌊S/3⌋ each). Outcomes are binomial. "Circuit runs" is the number of circuit evaluations per prediction, so the total number of shots per prediction is circuit runs × S. Training used exact expectations, or the same finite-shot sampling at S = 10⁴ ("noise-aware").
+
+| Task | Model | Circuit runs per prediction | Trained with | S = 10² | 10³ | 10⁴ | 10⁵ | 10⁶ | exact |
+|---|---|---|---|---|---|---|---|---|---|
+| Bessel J2 | QKAN-FWP-O | 54 | exact | 5.1e-06 | 6.9e-07 | 9.0e-08 | 1.3e-08 | 1.7e-09 | 1.4e-12 |
+| Bessel J2 | QKAN-FWP-O | 54 | S = 10⁴ | 8.7e-11 | 1.4e-11 | 3.1e-12 | 3.0e-13 | 5.8e-14 | 2.7e-14 |
+| Bessel J2 | QKAN-FWP-O, float32 | 54 | exact | 5.4e-06 | 7.0e-07 | 8.7e-08 | 1.3e-08 | 1.7e-09 | 1.4e-12 |
+| Bessel J2 | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 7.0e-11 | 1.6e-11 | 3.6e-12 | 4.0e-13 | 6.6e-14 | 3.2e-14 |
+| Bessel J2 | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 2.2e-03 | 2.4e-04 | 2.3e-05 | 2.5e-06 | 5.2e-07 | 2.8e-07 |
+| Bessel J2 | HQKAN-Δ, ⟨Z⟩ read-out | 12 | S = 10⁴ | 6.8e-04 | 6.7e-05 | 7.8e-06 | 1.4e-06 | 8.9e-07 | 8.1e-07 |
+| Bessel J2 | QKAN-FWP+, ⟨Z⟩ read-out | 92 | exact | 3.6e-03 | 3.4e-04 | 3.6e-05 | 4.3e-06 | 1.2e-06 | 8.2e-07 |
+| Bessel J2 | QKAN-FWP+, ⟨Z⟩ read-out | 92 | S = 10⁴ | 1.5e-03 | 1.6e-04 | 1.6e-05 | 2.2e-06 | 9.1e-07 | 7.4e-07 |
+| NARMA10 | QKAN-FWP-O | 54 | exact | 1.4e-04 | 3.1e-05 | 8.8e-06 | 3.7e-06 | 2.2e-06 | 2.0e-06 |
+| NARMA10 | QKAN-FWP-O | 54 | S = 10⁴ | 7.3e-05 | 1.6e-05 | 8.0e-06 | 5.9e-06 | 5.4e-06 | 5.3e-06 |
+| NARMA10 | QKAN-FWP-O, float32 | 54 | exact | 4.1e-04 | 9.1e-05 | 2.2e-05 | 1.1e-05 | 9.2e-06 | 8.9e-06 |
+| NARMA10 | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 1.1e-04 | 2.1e-05 | 6.5e-06 | 3.9e-06 | 3.4e-06 | 3.3e-06 |
+| NARMA10 | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 1.4e-03 | 1.4e-04 | 1.7e-05 | 4.3e-06 | 3.0e-06 | 2.9e-06 |
+| NARMA10 | HQKAN-Δ, ⟨Z⟩ read-out | 12 | S = 10⁴ | 7.2e-04 | 7.3e-05 | 1.1e-05 | 4.8e-06 | 4.3e-06 | 4.2e-06 |
+| NARMA10 | QKAN-FWP+, ⟨Z⟩ read-out | 92 | exact | 2.7e-03 | 2.8e-04 | 3.4e-05 | 1.1e-05 | 8.2e-06 | 8.0e-06 |
+| NARMA10 | QKAN-FWP+, ⟨Z⟩ read-out | 92 | S = 10⁴ | 1.7e-03 | 2.1e-04 | 2.9e-05 | 1.3e-05 | 1.1e-05 | 1.1e-05 |
+| Delayed quantum control | QKAN-FWP-O | 54 | exact | 7.8e-05 | 1.2e-05 | 2.5e-06 | 5.0e-07 | 1.2e-07 | 3.2e-08 |
+| Delayed quantum control | QKAN-FWP-O | 54 | S = 10⁴ | 7.8e-07 | 1.8e-07 | 7.4e-08 | 5.1e-08 | 4.9e-08 | 4.8e-08 |
+| Delayed quantum control | QKAN-FWP-O, float32 | 54 | exact | 6.5e-05 | 9.8e-06 | 1.9e-06 | 4.1e-07 | 1.1e-07 | 3.5e-08 |
+| Delayed quantum control | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 7.2e-07 | 1.3e-07 | 5.0e-08 | 3.6e-08 | 3.3e-08 | 3.3e-08 |
+| Delayed quantum control | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 2.6e-03 | 2.7e-04 | 3.9e-05 | 1.6e-05 | 1.4e-05 | 1.4e-05 |
+| Delayed quantum control | HQKAN-Δ, ⟨Z⟩ read-out | 12 | S = 10⁴ | 1.8e-03 | 1.7e-04 | 3.0e-05 | 1.7e-05 | 1.5e-05 | 1.5e-05 |
+| Delayed quantum control | QKAN-FWP+, ⟨Z⟩ read-out | 92 | exact | 3.9e-03 | 3.7e-04 | 4.1e-05 | 8.9e-06 | 6.1e-06 | 5.8e-06 |
+| Delayed quantum control | QKAN-FWP+, ⟨Z⟩ read-out | 92 | S = 10⁴ | 2.5e-03 | 2.2e-04 | 3.1e-05 | 8.4e-06 | 6.3e-06 | 6.1e-06 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O | 54 | exact | 9.4e-04 | 9.1e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O | 54 | S = 10⁴ | 9.4e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O, float32 | 54 | exact | 9.2e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 9.4e-04 | 9.1e-04 | 9.1e-04 | 9.1e-04 | 9.1e-04 | 9.1e-04 |
+| Family: damped oscillation, noise 0.02 | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 8.7e-03 | 4.0e-03 | 3.5e-03 | 3.4e-03 | 3.4e-03 | 3.4e-03 |
+| Family: damped oscillation, noise 0.02 | HQKAN-Δ, ⟨Z⟩ read-out | 12 | S = 10⁴ | 8.5e-03 | 4.0e-03 | 3.5e-03 | 3.4e-03 | 3.4e-03 | 3.4e-03 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP+, ⟨Z⟩ read-out | 92 | exact | 1.5e-02 | 3.3e-03 | 2.2e-03 | 2.1e-03 | 2.1e-03 | 2.1e-03 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP+, ⟨Z⟩ read-out | 92 | S = 10⁴ | 1.0e-02 | 3.0e-03 | 2.3e-03 | 2.2e-03 | 2.2e-03 | 2.2e-03 |
+| Family: Hénon map | QKAN-FWP-O | 54 | exact | 1.2e-01 | 1.7e-02 | 2.3e-03 | 3.2e-04 | 6.6e-05 | 3.4e-05 |
+| Family: Hénon map | QKAN-FWP-O | 54 | S = 10⁴ | 1.4e-02 | 1.6e-03 | 2.8e-04 | 1.5e-04 | 1.4e-04 | 1.4e-04 |
+| Family: Hénon map | QKAN-FWP-O, float32 | 54 | exact | 1.2e-01 | 1.6e-02 | 2.3e-03 | 3.2e-04 | 6.8e-05 | 3.8e-05 |
+| Family: Hénon map | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 1.4e-02 | 1.6e-03 | 2.8e-04 | 1.4e-04 | 1.3e-04 | 1.3e-04 |
+| Family: Hénon map | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 1.0e-02 | 2.4e-03 | 1.6e-03 | 1.5e-03 | 1.5e-03 | 1.5e-03 |
+| Family: Hénon map | HQKAN-Δ, ⟨Z⟩ read-out | 12 | S = 10⁴ | 9.0e-03 | 2.3e-03 | 1.6e-03 | 1.5e-03 | 1.5e-03 | 1.5e-03 |
+| Family: Hénon map | QKAN-FWP+, ⟨Z⟩ read-out | 92 | exact | 1.4e-02 | 1.9e-03 | 7.1e-04 | 5.9e-04 | 5.8e-04 | 5.8e-04 |
+| Family: Hénon map | QKAN-FWP+, ⟨Z⟩ read-out | 92 | S = 10⁴ | 1.5e-02 | 2.3e-03 | 1.0e-03 | 9.2e-04 | 9.0e-04 | 9.0e-04 |
+
+- **以精確期望值訓練的 QKAN-FWP-O 對量測次數很敏感。** Bessel 從 1.4e-12（精確）退到 9e-8（$S = 10^4$）與 5e-6（$S = 10^2$）；
+  Hénon 在 $S \le 10^3$ 時比另外兩個模型差一個數量級。學到的先驗精度很小（7.2 節），量測雜訊被線性求解放大。
+- **Noise-aware 訓練大幅改善**，而且在接近線性的任務上（Bessel、DQC、阻尼振盪）幾乎不再受 $S$ 影響：$S = 10^2$ 時 Bessel 是 8.7e-11、
+  DQC 是 7.8e-7。但原因要說清楚：模型改為主要依賴 base-activation 的**線性項——它是古典計算的，沒有量測雜訊**——
+  而把帶雜訊的 Bloch 特徵的權重降下來。這等於退回 5.4 節的古典對照組；在這些任務上量子特徵本來就沒有貢獻。
+- **真正需要 Bloch 特徵的 Hénon map 才是有意義的測試。** Noise-aware 的 QKAN-FWP-O 在 $S = 10^4$ 是 2.8e-4（HQKAN-Δ 1.6e-3、
+  QKAN-FWP+ 1.0e-3），$S = 10^3$ 時三者相當（1.6e-3／2.3e-3／2.3e-3），**$S = 10^2$ 時輸給 HQKAN-Δ**（1.4e-2 對 9.0e-3）。
+  而且 HQKAN-Δ 每次預測只跑 12 個電路，QKAN-FWP-O 是 54 個：以相同的總量測次數比較，QKAN-FWP-O 在 Hénon 上要到每次預測
+  約 $5\times10^5$ 次量測（$S \approx 10^4$）以上才有優勢。
+- **NARMA10**：兩種訓練方式下 QKAN-FWP-O 在 $S \le 10^4$ 都低於另外兩個模型（$S = 10^2$ 時 7e-5 ～ 1.4e-4 對 7e-4 ～ 2.7e-3），
+  $S$ 更大時三者同一個量級。
+- 另外兩個模型同樣受量測雜訊影響：$S \le 10^3$ 時它們的誤差由量測雜訊主導、大致與 $1/S$ 成正比。
+- 這裡只有統計（shot）雜訊，沒有硬體的閘誤差與退相干；真機沒有測。
+
+### 7.2 Gram 矩陣的條件數與單精度
+
+$C_T \succeq \Lambda_0$，所以條件數不超過 $(\lambda_{\max}(\Lambda_0) + \sum_t\beta_t\|k_t\|^2)/\lambda_{\min}(\Lambda_0)$；
+學到的先驗精度越小，求解越病態。下表是訓練好的模型在 test window 上 $C_T$ 的條件數（中位數）：
+
+| Task | Model | Trained with | S = 10² | 10³ | 10⁴ | 10⁵ | 10⁶ | exact |
+|---|---|---|---|---|---|---|---|---|
+| Bessel J2 | QKAN-FWP-O | exact | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 |
+| Bessel J2 | QKAN-FWP-O | S = 10⁴ | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
+| Bessel J2 | QKAN-FWP-O, float32 | exact | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 |
+| Bessel J2 | QKAN-FWP-O, float32 | S = 10⁴ | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
+| NARMA10 | QKAN-FWP-O | exact | 2e+06 | 2e+06 | 2e+06 | 2e+06 | 2e+06 | 2e+06 |
+| NARMA10 | QKAN-FWP-O | S = 10⁴ | 1e+05 | 1e+05 | 1e+05 | 1e+05 | 1e+05 | 1e+05 |
+| NARMA10 | QKAN-FWP-O, float32 | exact | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
+| NARMA10 | QKAN-FWP-O, float32 | S = 10⁴ | 8e+04 | 8e+04 | 8e+04 | 8e+04 | 8e+04 | 8e+04 |
+| Delayed quantum control | QKAN-FWP-O | exact | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
+| Delayed quantum control | QKAN-FWP-O | S = 10⁴ | 3e+05 | 3e+05 | 3e+05 | 3e+05 | 3e+05 | 3e+05 |
+| Delayed quantum control | QKAN-FWP-O, float32 | exact | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
+| Delayed quantum control | QKAN-FWP-O, float32 | S = 10⁴ | 6e+05 | 6e+05 | 6e+05 | 6e+05 | 6e+05 | 6e+05 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O | exact | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O | S = 10⁴ | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O, float32 | exact | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O, float32 | S = 10⁴ | 1e+02 | 1e+02 | 1e+02 | 1e+02 | 1e+02 | 1e+02 |
+| Family: Hénon map | QKAN-FWP-O | exact | 1e+05 | 1e+05 | 1e+05 | 2e+05 | 2e+05 | 2e+05 |
+| Family: Hénon map | QKAN-FWP-O | S = 10⁴ | 2e+04 | 2e+04 | 2e+04 | 2e+04 | 2e+04 | 2e+04 |
+| Family: Hénon map | QKAN-FWP-O, float32 | exact | 1e+05 | 1e+05 | 1e+05 | 1e+05 | 2e+05 | 2e+05 |
+| Family: Hénon map | QKAN-FWP-O, float32 | S = 10⁴ | 3e+03 | 3e+03 | 3e+03 | 3e+03 | 3e+03 | 3e+03 |
+
+- 條件數的中位數在論文的 benchmark 上約為 $10^5$–$10^6$，在有雜訊的系統族上約為 $10^2$——模型在乾淨的資料上學到很小的先驗精度
+  （5.4 節的表：約 $10^{-5}$）。Noise-aware 訓練會學到較大的先驗精度，條件數降 3–10 倍（Bessel 例外）。
+  量測次數本身幾乎不改變條件數：它由先驗精度與特徵的尺度決定。
+- **單精度。** 其他模型都在 float32 下訓練，QKAN-FWP-O 預設用 float64，這是不對稱的。把特徵、統計量與求解全部改成 float32
+  （`precision='float32'`；token 與增量仍和其他模型一樣先用 float64 形成）之後，上表五個任務的 MSE 與 float64 幾乎相同，
+  Bessel 仍是 1.4e-12。條件數 $10^6$ 乘上 float32 的 $6\times10^{-8}$ 表示 $R_T$ 的各個分量只有一到兩位有效數字，
+  但預測需要的是殘差被擬合的程度，而線性求解對殘差是穩定的；加上模型預測的是增量 $x_{T+1}-x_T$，1e-12 的 MSE（RMS 誤差 $10^{-6}$）
+  並不需要雙精度。全部 24 格的 float32 結果在 5.4 節的消融表。
 
 ---
 
@@ -837,7 +980,8 @@ For every model the learning rate is the one with the lowest validation loss amo
 - 六個 time-series benchmark 幾乎是線性問題（5.2 節）。在它們上面，MSE 排名主要反映「誰把一個接近線性的映射擬合得比較準」。
 - QKAN-FWP-O 的 in-context 最小平方本身是既有的做法（3.3 節）；它的量子部分可以古典模擬，在線性系統上
   Bloch 特徵沒有貢獻（5.4、6 節）。
-- 有限量測次數的影響只做了模擬（第 7 節），沒有真機實驗；沒有硬體雜訊模型。
+- 有限量測次數的影響只做了統計雜訊的模擬（第 7 節），沒有閘誤差與退相干的模型，也沒有真機實驗。在需要量子特徵的任務上，
+  QKAN-FWP-O 的優勢需要每個電路約 $10^4$ 次以上的量測。
 - 論文以多 qubit VQC 為 fast programmer 的三個模型（QFWP、G-QFWP、GQKAN-QFWP）沒有重新實作。
 - MiniGrid 強化學習（論文 Sec. 6.3）沒有做；論文 Table 7 的 classical baselines（LSTM、WaveNet-LSTM、MESN…）也沒有重跑。
 - lr 只掃了 cosine schedule 下的少數幾個值；模型設定是在少數候選中用 2–3 個 validation seed 選的，候選之間的差距

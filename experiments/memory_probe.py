@@ -1,10 +1,11 @@
 """What the memory of QKAN-FWP-O uses: the learned weights ``beta_t`` of the
 context pairs (paper Eq. 5), averaged over the test windows.
 
-For every benchmark the final model is trained with the paper split at window
+For every benchmark the model is trained with the paper split at window
 N = 32 (24 complete context pairs) and the script records the mean weight of
-each pair as a function of its age, the total weight ``sum_t beta_t`` and the
-effective number of pairs ``(sum beta)^2 / sum beta^2``.
+each pair as a function of its age, the total weight ``sum_t beta_t``, the
+effective number of pairs ``(sum beta)^2 / sum beta^2`` and the condition
+number of the Gram matrix ``C_T`` of the read-out solve.
 """
 
 from __future__ import annotations
@@ -55,12 +56,16 @@ def main():
             with torch.no_grad():
                 _, k, _, valid = model.context_pairs(x[te])
                 beta = model.memory_weights(k[:, :-1], valid)[:, valid[0]]  # complete pairs only, oldest first
+                cond = torch.linalg.cond(model.gram_matrix(x[te]).double())
+                prior = torch.exp(model.log_prior)
             runs.append(dict(
                 seed=seed, test=res["final"]["test"],
                 beta_by_age=beta.mean(0).flip(0).tolist(),  # index 0 = the most recent pair
                 total_weight=beta.sum(1).mean().item(),
                 effective_pairs=(beta.sum(1) ** 2 / (beta**2).sum(1)).mean().item(),
                 n_pairs=beta.shape[1],
+                cond_median=cond.median().item(), cond_max=cond.max().item(),
+                prior_precision_median=prior.median().item(),
             ))
             print(ds, seed, f"test {runs[-1]['test']:.1e} effective pairs {runs[-1]['effective_pairs']:.1f} of {beta.shape[1]}", flush=True)
         out[ds] = runs
