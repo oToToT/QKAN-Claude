@@ -16,7 +16,7 @@ runners skip runs that are already present.
 | `final_timeseries_abl.jsonl` | Paper protocol: one change at a time on top of the baseline (appendix A of the report) |
 | `final_timeseries_pm.jsonl` | Paper protocol: QKAN-FWP+, HQKAN-Δ, their ablations and the LSTM control |
 | `final_cmg.jsonl` | Paper protocol: complementary matrix gate (CMG) baselines |
-| `final_om.jsonl` | Paper protocol: QKAN-FWP-O and its ablations |
+| `final_om.jsonl` | Paper protocol: QKAN-FWP-O, its ablations, the float32 version and the classical-feature controls |
 | `extra_seeds.jsonl` | Seeds 5–14 for the QKAN-FWP+ vs HQKAN-Δ comparison |
 | `robust_exactz.jsonl` | Physical ⟨Z⟩ read-out instead of the `qkan` default |
 | `robust_norm.jsonl` | Min–max scaling fitted on the training part only (`norm: "train"`), or no scaling (`norm: "none"`) |
@@ -38,8 +38,13 @@ runners skip runs that are already present.
 
 ## Finite shots (`experiments/shot_noise.py`)
 
-`shot_noise.jsonl`: test MSE as a function of the number of shots per measured expectation, for models trained with exact
-expectations and with 10⁴ shots.
+`shot_noise.jsonl`: test MSE as a function of the shot budget per circuit and input (split over the three bases for
+QKAN-FWP-O, binomial sampling), for models trained with exact expectations and with a budget of 10⁴; also the number of
+circuit evaluations per prediction and the condition number of the Gram matrix of QKAN-FWP-O.
+
+## Cost (`experiments/cost.py`)
+
+`cost.json`: forward-pass time of the least-squares read-out, the delta rule and the static model.
 
 ## Solar cycle (`experiments/run_solar.py`)
 

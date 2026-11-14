@@ -146,6 +146,9 @@ python experiments/run_timeseries.py --datasets $SMALL --out results/final_om.js
                ${OM}_gconst@cos30 ${OM}_gnone@cos30 ${OM}_delta@cos30 ${OM}_pscalar@cos30
 python experiments/run_timeseries.py --datasets jc --out results/final_om.jsonl \
     --variants $OM@cos30 ${OM}_static@cos30 ${OM}_classical@cos30
+# controls: single precision, and classical tanh / cos features read by the same memory
+python experiments/run_timeseries.py --out results/final_om.jsonl \
+    --variants ${OM}_single@cos30 ${OM}_tanh@cos30 ${OM}_fourier@cos30
 python experiments/run_timeseries.py --datasets $SMALL --variants cmg cmg@cos30 cmg_plus@cos30 --out results/final_cmg.jsonl
 python experiments/run_timeseries.py --datasets jc --variants cmg@cos10 cmg_plus@cos30 --out results/final_cmg.jsonl
 # robustness of QKAN-FWP-O: train-only normalisation, NARMA without the start-up transient
@@ -154,7 +157,8 @@ python experiments/run_timeseries.py --datasets narma5b narma10b --windows 8 16 
 
 # families of systems: learning-rate sweep on seed 0, then seeds 1-2 at the rate with the lowest validation MSE
 FV=""
-for v in $OM ${OM}_static ${OM}_classical ${OM}_gnone ${OM}_delta ar_hqkan8 pmx_diff8_edge_h3l2 cmg_plus cmg base lstm_ext8; do
+for v in $OM ${OM}_static ${OM}_classical ${OM}_gnone ${OM}_delta ${OM}_single ${OM}_tanh ${OM}_fourier \
+         ar_hqkan8 pmx_diff8_edge_h3l2 cmg_plus cmg base lstm_ext8; do
     FV="$FV $v@cos3 $v@cos10 $v@cos30"
 done
 python experiments/run_family.py --windows 16 --noise 0 0.02 --variants refs $FV --seeds 0 --out results/family_lr.jsonl
@@ -165,9 +169,12 @@ python experiments/run_family.py --windows 16 --noise 0 0.02 --best-lr-from resu
 # what the memory of QKAN-FWP-O uses (weights of the context pairs)
 python experiments/memory_probe.py
 
-# finite shots
-python experiments/shot_noise.py --variants $OM@cos30 ar_hqkan8+z@cos30 pmx_diff8_edge_h3l2+z@cos30 --train-shots 0 1e4 \
-    --out results/shot_noise.jsonl
+# cost of the read-out rules (timing)
+python experiments/cost.py
+
+# finite shots (budget per circuit and input, split over the measurement bases; binomial sampling)
+python experiments/shot_noise.py --variants $OM@cos30 ${OM}_single@cos30 ar_hqkan8+z@cos30 pmx_diff8_edge_h3l2+z@cos30 \
+    --train-shots 0 1e4 --out results/shot_noise.jsonl
 
 # solar cycle: configuration sweep (compared on validation loss), then both versions on the three splits
 python experiments/run_solar.py --seeds 0 1 --out results/dev_solar_om.jsonl \

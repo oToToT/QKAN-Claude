@@ -100,9 +100,9 @@
 | one prior precision instead of one per feature | 106–130 | **1×** | 9/20 | 0.99× | 0.98× | 0.98× | 1.2× | 0.9× | – |
 | no base-activation (linear) term: Bloch features only | 112–136 | **4.7×** | 18/20 | 3.8× | 25× | 1.8× | 3.2× | 4.2× | – |
 | no Bloch features: linear term only (classical control) | 52–76 | **1.1×** | 14/24 | 0.5× | 3.2× | 1.6× | 1.4× | 2.2× | 0.18× |
-| classical tanh(w·u + b) features instead of the Bloch features, same memory | 166 | **0.74×** | 0/2 | 0.75× | 0.73× | – | – | – | – |
-| classical cos(w·u + b) features instead of the Bloch features, same memory | 166 | **0.83×** | 0/2 | 0.88× | 0.78× | – | – | – | – |
-| float32 instead of float64 (features, statistics and solve) | 154 | **1.1×** | 2/3 | 1× | 0.98× | 1.5× | – | – | – |
+| classical tanh(w·u + b) features instead of the Bloch features, same memory | 142–166 | **0.92×** | 10/24 | 0.89× | 0.93× | 1.1× | 0.89× | 0.95× | 0.8× |
+| classical cos(w·u + b) features instead of the Bloch features, same memory | 142–166 | **1.1×** | 13/24 | 0.97× | 1.1× | 1× | 1.7× | 0.93× | 0.93× |
+| float32 instead of float64 (features, statistics and solve) | 130–154 | **1.2×** | 16/24 | 1× | 1× | 2.1× | 1.6× | 0.95× | 1× |
 | 4 circuits instead of 6 | 88–104 | **1.7×** | 18/20 | 1.3× | 3.6× | 1.1× | 1.6× | 1.7× | – |
 | fixed token length 6 instead of min(8, N/2) | 142 | **1.9×** | 13/20 | 0.72× | 1.4× | 5.3× | 1.2× | 3.9× | – |
 
@@ -110,12 +110,12 @@
 
 | Dataset | Test MSE | Total weight Σβ | Effective number of pairs | Weight of the most recent pair | Weight of the 3 most recent pairs | Prior precision (median) | cond(C_T), median | cond(C_T), max |
 |---|---|---|---|---|---|---|---|---|
-| Bessel J2 | 3.4e-12 | 0.99 | 9.5 | 0.19 | 0.47 | – | – | – |
-| Damped SHM | 2.8e-11 | 1.00 | 8.5 | 0.21 | 0.51 | – | – | – |
-| NARMA5 | 4.7e-08 | 1.00 | 1.4 | 0.84 | 1.00 | – | – | – |
-| NARMA10 | 2.2e-08 | 1.00 | 1.7 | 0.75 | 0.98 | – | – | – |
-| Delayed quantum control | 1.0e-08 | 0.92 | 16.1 | 0.10 | 0.27 | – | – | – |
-| Jaynes–Cummings | 7.0e-13 | 1.00 | 8.7 | 0.21 | 0.50 | – | – | – |
+| Bessel J2 | 3.4e-12 | 0.99 | 9.5 | 0.19 | 0.47 | 1e-05 | 8e+05 | 1e+06 |
+| Damped SHM | 2.8e-11 | 1.00 | 8.5 | 0.21 | 0.51 | 1e-05 | 9e+05 | 1e+06 |
+| NARMA5 | 4.7e-08 | 1.00 | 1.4 | 0.84 | 1.00 | 8e-06 | 6e+06 | 9e+06 |
+| NARMA10 | 2.2e-08 | 1.00 | 1.7 | 0.75 | 0.98 | 7e-06 | 2e+06 | 2e+06 |
+| Delayed quantum control | 1.0e-08 | 0.92 | 16.1 | 0.10 | 0.27 | 1e-05 | 1e+06 | 1e+06 |
+| Jaynes–Cummings | 7.0e-13 | 1.00 | 8.7 | 0.21 | 0.50 | 1e-05 | 8e+05 | 9e+05 |
 
 ## Cost of the read-out (one CPU thread, F = 25 features, milliseconds per 1000 windows)
 

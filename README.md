@@ -32,7 +32,7 @@
 | Delayed quantum control | 5.5e-06 | 4.4e-04 | 8.0e-06 | 3.5e-06 | **2.2e-08** | 2.6e-07 |
 | Jaynes–Cummings | 7.6e-06 | 1.7e-05 | 7.4e-09 | 1.7e-09 | **4.7e-13** | 1.1e-31 |
 
-- **QKAN-FWP-O 在 24 格中的 23 格是所有訓練出來的模型裡最低的**，幾何平均比 HQKAN-Δ 低約 700 倍、比 QKAN-FWP+ 與 CMG 低三個數量級以上、
+- **QKAN-FWP-O 在 24 格中的 23 格比其他所有架構都低**，幾何平均比 HQKAN-Δ 低約 700 倍、比 QKAN-FWP+ 與 CMG 低三個數量級以上、
   比調過 learning rate 的 GQKAN-QKANFWP 低五個數量級。在五個 300 點序列上，拿掉 fast weights 差一到四個數量級：收益來自閉迴路的記憶。
 - 論文型態的記憶（由 slow programmer 產生旋轉角）在這些 benchmark 上沒有幫助：沒有 fast weights 的 HQKAN-Δ 在每一格都比
   QKAN-FWP+ 好，也比給了相同 token 的 CMG 好。
@@ -47,13 +47,15 @@
 - **六個 benchmark 幾乎是線性問題**：9 個參數的線性 AR(8)（最小平方，不需要訓練）在 24 格中的 21 格贏過兩篇論文印出的最佳數字；
   QKAN-FWP-O 只在 NARMA 與 DQC 的 11 格低於它。QKAN-FWP-O 對其他神經模型的差距，主要是「在 context 內直接解最小平方」
   對「用 SGD 逼近線性映射」的差距。
-- **起作用的是閉迴路的記憶，不是量子電路**：把 Bloch 特徵換成同樣數目的古典 tanh 特徵、記憶與求解完全不變，結果沒有差別；
-  float32 與 float64 也沒有差別。非線性系統需要某種非線性特徵（只留線性項在 Hénon map 上差 22–1164 倍），但 Bloch 向量沒有比
-  古典特徵更好的歸納偏置。模型可以古典模擬，不主張量子優勢；對 QKAN-FWP 的意義是 fast weights 應該放在讀出為線性的量測算符空間。
+- **起作用的是閉迴路的記憶，不是量子電路**：把 Bloch 特徵換成同樣數目的古典 tanh 特徵、記憶與求解完全不變，結果沒有差別
+  （論文 benchmark 0.92 倍、系統族 1.0 倍）；改用 float32 也幾乎沒有差別（1.2 倍與 1.0 倍）。非線性系統需要某種非線性特徵
+  （只留線性項在 Hénon map 上差 22–1164 倍），但 Bloch 向量沒有比古典特徵更好的歸納偏置。模型可以古典模擬，不主張量子優勢；
+  對 QKAN-FWP 的意義是 fast weights 應該放在讀出為線性的量測算符空間，而不是旋轉角。
 - **沒有重現論文印出的 baseline 數字**（論文協定下差 21 倍，調過 learning rate 後差 1.9 倍），所以倍數都是同一個 pipeline 內的比較。
 - In-context 最小平方本身是既有方法（ALPaCA、mesa-layer、delta rule）；這裡的貢獻是把它接到 QKAN-FWP 上並保留論文 gated 遞迴的封閉形式。
-- **有限量測次數**只做了統計雜訊的模擬（REPORT 第 7 節）：以精確期望值訓練的 QKAN-FWP-O 對量測雜訊很敏感，訓練時加入量測雜訊可以修正；
-  在需要量子特徵的 Hénon map 上，每個電路約 10⁴ 次量測以上才優於靜態模型。
+- **有限量測次數**只做了統計雜訊的模擬（REPORT 第 7 節；每個電路的 shot 預算在 X／Y／Z 三個基底間平分）：以精確期望值訓練的
+  QKAN-FWP-O 對量測雜訊很敏感，訓練時加入量測雜訊可以修正；在需要非線性特徵的 Hénon map 上，每個電路約 10⁴ 次量測以上才優於靜態模型，
+  10² 次時反而較差。
 - 太陽黑子的峰值指標沒有模型穩定贏過「重複上一個週期」。
 - 沒有做：MiniGrid 強化學習、真機實驗、以多 qubit VQC 為 fast programmer 的模型。
 
@@ -69,7 +71,8 @@
 | `experiments/run_timeseries.py` | 一步預測 benchmark（論文 Sec. 6.1） |
 | `experiments/run_family.py` | 系統族上的 in-context 預測與封閉形式的參考線 |
 | `experiments/run_solar.py` | 太陽黑子週期 direct multi-step 預測（論文 Sec. 6.2） |
-| `experiments/shot_noise.py` | 有限量測次數的敏感度 |
+| `experiments/shot_noise.py` | 有限量測次數的敏感度（每個電路的 shot 預算在三個量測基底間平分、binomial 抽樣）與 Gram 矩陣條件數 |
+| `experiments/cost.py` | 封閉形式求解、delta rule 與靜態讀出的計時 |
 | `experiments/memory_probe.py` | QKAN-FWP-O 學到的記憶權重（每個 context 配對的權重） |
 | `experiments/reference_baselines.py` | 線性 AR 參考線 |
 | `experiments/make_figures.py`, `experiments/make_om_report.py` | 由 `results/*.jsonl` 產生表格與 `figures/` |
