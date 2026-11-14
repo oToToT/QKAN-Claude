@@ -352,6 +352,75 @@ S shots are available to every circuit for every input it processes. A ⟨Z⟩ r
 | Family: Hénon map | QKAN-FWP-O, float32 | exact | 1e+05 | 1e+05 | 1e+05 | 1e+05 | 2e+05 | 2e+05 |
 | Family: Hénon map | QKAN-FWP-O, float32 | S = 10⁴ | 3e+03 | 3e+03 | 3e+03 | 3e+03 | 3e+03 | 3e+03 |
 
+## Where the shot noise of QKAN-FWP-O enters (N = 16; test MSE, mean over 3 seeds)
+
+The same trained model; only the listed circuit runs are sampled, the others use exact expectations. "Programmed axis": each query circuit is measured in the single basis given by the fast observable R_T (all S shots in one setting) instead of X, Y and Z (⌊S/3⌋ each).
+
+| Task | Trained with | Sampled circuits | S = 10² | 10³ | 10⁴ | 10⁵ | 10⁶ | exact |
+|---|---|---|---|---|---|---|---|---|
+| Bessel J2 | exact | query circuits only, X/Y/Z | 6.1e-06 | 5.8e-07 | 6.7e-08 | 6.5e-09 | 6.7e-10 | 1.4e-12 |
+| Bessel J2 | exact | query circuits only, programmed axis | 2.6e-06 | 2.6e-07 | 2.6e-08 | 2.5e-09 | 2.5e-10 | 1.4e-12 |
+| Bessel J2 | exact | context circuits only | 1.3e-06 | 2.6e-07 | 4.0e-08 | 6.8e-09 | 1.2e-09 | 1.4e-12 |
+| Bessel J2 | exact | all circuits, query in X/Y/Z | 5.2e-06 | 6.8e-07 | 8.6e-08 | 1.2e-08 | 1.7e-09 | 1.4e-12 |
+| Bessel J2 | exact | all circuits, query along the programmed axis | 2.6e-06 | 4.2e-07 | 6.5e-08 | 9.5e-09 | 1.5e-09 | 1.4e-12 |
+| Bessel J2 | S = 10⁴ | query circuits only, X/Y/Z | 7.0e-11 | 6.5e-12 | 6.5e-13 | 9.7e-14 | 3.5e-14 | 2.7e-14 |
+| Bessel J2 | S = 10⁴ | query circuits only, programmed axis | 2.2e-11 | 2.2e-12 | 2.4e-13 | 5.2e-14 | 3.0e-14 | 2.7e-14 |
+| Bessel J2 | S = 10⁴ | context circuits only | 5.2e-11 | 9.7e-12 | 2.4e-12 | 2.6e-13 | 5.0e-14 | 2.7e-14 |
+| Bessel J2 | S = 10⁴ | all circuits, query in X/Y/Z | 9.0e-11 | 1.5e-11 | 2.9e-12 | 3.1e-13 | 5.7e-14 | 2.7e-14 |
+| Bessel J2 | S = 10⁴ | all circuits, query along the programmed axis | 6.3e-11 | 1.2e-11 | 2.5e-12 | 2.9e-13 | 5.6e-14 | 2.7e-14 |
+| NARMA10 | exact | query circuits only, X/Y/Z | 1.3e-04 | 1.6e-05 | 3.5e-06 | 2.1e-06 | 2.0e-06 | 2.0e-06 |
+| NARMA10 | exact | query circuits only, programmed axis | 5.2e-05 | 6.9e-06 | 2.5e-06 | 2.1e-06 | 2.0e-06 | 2.0e-06 |
+| NARMA10 | exact | context circuits only | 7.5e-05 | 2.4e-05 | 7.8e-06 | 3.7e-06 | 2.2e-06 | 2.0e-06 |
+| NARMA10 | exact | all circuits, query in X/Y/Z | 1.4e-04 | 3.2e-05 | 8.7e-06 | 3.9e-06 | 2.3e-06 | 2.0e-06 |
+| NARMA10 | exact | all circuits, query along the programmed axis | 8.7e-05 | 2.4e-05 | 7.8e-06 | 3.7e-06 | 2.3e-06 | 2.0e-06 |
+| NARMA10 | S = 10⁴ | query circuits only, X/Y/Z | 7.9e-05 | 1.1e-05 | 5.9e-06 | 5.4e-06 | 5.3e-06 | 5.3e-06 |
+| NARMA10 | S = 10⁴ | query circuits only, programmed axis | 2.8e-05 | 8.0e-06 | 5.7e-06 | 5.3e-06 | 5.3e-06 | 5.3e-06 |
+| NARMA10 | S = 10⁴ | context circuits only | 3.4e-05 | 1.2e-05 | 7.0e-06 | 5.7e-06 | 5.4e-06 | 5.3e-06 |
+| NARMA10 | S = 10⁴ | all circuits, query in X/Y/Z | 7.3e-05 | 1.7e-05 | 7.8e-06 | 5.8e-06 | 5.4e-06 | 5.3e-06 |
+| NARMA10 | S = 10⁴ | all circuits, query along the programmed axis | 4.8e-05 | 1.4e-05 | 7.6e-06 | 5.8e-06 | 5.4e-06 | 5.3e-06 |
+| Delayed quantum control | exact | query circuits only, X/Y/Z | 9.1e-05 | 8.4e-06 | 8.5e-07 | 1.1e-07 | 4.0e-08 | 3.2e-08 |
+| Delayed quantum control | exact | query circuits only, programmed axis | 2.2e-05 | 2.3e-06 | 2.5e-07 | 5.5e-08 | 3.4e-08 | 3.2e-08 |
+| Delayed quantum control | exact | context circuits only | 2.5e-05 | 6.6e-06 | 1.7e-06 | 3.8e-07 | 9.2e-08 | 3.2e-08 |
+| Delayed quantum control | exact | all circuits, query in X/Y/Z | 8.3e-05 | 1.2e-05 | 2.1e-06 | 5.3e-07 | 1.2e-07 | 3.2e-08 |
+| Delayed quantum control | exact | all circuits, query along the programmed axis | 3.9e-05 | 8.4e-06 | 1.9e-06 | 3.9e-07 | 1.1e-07 | 3.2e-08 |
+| Delayed quantum control | S = 10⁴ | query circuits only, X/Y/Z | 4.8e-07 | 9.2e-08 | 5.1e-08 | 4.9e-08 | 4.8e-08 | 4.8e-08 |
+| Delayed quantum control | S = 10⁴ | query circuits only, programmed axis | 1.4e-07 | 6.3e-08 | 4.9e-08 | 4.9e-08 | 4.9e-08 | 4.8e-08 |
+| Delayed quantum control | S = 10⁴ | context circuits only | 3.5e-07 | 1.5e-07 | 6.6e-08 | 5.1e-08 | 4.9e-08 | 4.8e-08 |
+| Delayed quantum control | S = 10⁴ | all circuits, query in X/Y/Z | 7.8e-07 | 1.8e-07 | 7.2e-08 | 5.1e-08 | 4.9e-08 | 4.8e-08 |
+| Delayed quantum control | S = 10⁴ | all circuits, query along the programmed axis | 4.5e-07 | 1.5e-07 | 6.8e-08 | 5.2e-08 | 4.9e-08 | 4.8e-08 |
+| Family: damped oscillation, noise 0.02 | exact | query circuits only, X/Y/Z | 9.3e-04 | 9.1e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | exact | query circuits only, programmed axis | 9.1e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | exact | context circuits only | 9.2e-04 | 9.1e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | exact | all circuits, query in X/Y/Z | 9.4e-04 | 9.1e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | exact | all circuits, query along the programmed axis | 9.2e-04 | 9.1e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | S = 10⁴ | query circuits only, X/Y/Z | 9.2e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | S = 10⁴ | query circuits only, programmed axis | 9.1e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | S = 10⁴ | context circuits only | 9.2e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | S = 10⁴ | all circuits, query in X/Y/Z | 9.4e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | S = 10⁴ | all circuits, query along the programmed axis | 9.2e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: Hénon map | exact | query circuits only, X/Y/Z | 1.1e-01 | 1.1e-02 | 1.1e-03 | 1.4e-04 | 4.5e-05 | 3.4e-05 |
+| Family: Hénon map | exact | query circuits only, programmed axis | 1.8e-02 | 1.8e-03 | 2.1e-04 | 5.2e-05 | 3.6e-05 | 3.4e-05 |
+| Family: Hénon map | exact | context circuits only | 3.6e-02 | 7.3e-03 | 1.3e-03 | 2.1e-04 | 5.4e-05 | 3.4e-05 |
+| Family: Hénon map | exact | all circuits, query in X/Y/Z | 1.2e-01 | 1.7e-02 | 2.3e-03 | 3.2e-04 | 6.5e-05 | 3.4e-05 |
+| Family: Hénon map | exact | all circuits, query along the programmed axis | 5.6e-02 | 9.3e-03 | 1.5e-03 | 2.4e-04 | 5.6e-05 | 3.4e-05 |
+| Family: Hénon map | S = 10⁴ | query circuits only, X/Y/Z | 8.5e-03 | 9.8e-04 | 2.2e-04 | 1.5e-04 | 1.4e-04 | 1.4e-04 |
+| Family: Hénon map | S = 10⁴ | query circuits only, programmed axis | 3.0e-03 | 4.2e-04 | 1.7e-04 | 1.4e-04 | 1.4e-04 | 1.4e-04 |
+| Family: Hénon map | S = 10⁴ | context circuits only | 4.8e-03 | 7.2e-04 | 2.0e-04 | 1.4e-04 | 1.4e-04 | 1.4e-04 |
+| Family: Hénon map | S = 10⁴ | all circuits, query in X/Y/Z | 1.4e-02 | 1.6e-03 | 2.8e-04 | 1.5e-04 | 1.4e-04 | 1.4e-04 |
+| Family: Hénon map | S = 10⁴ | all circuits, query along the programmed axis | 7.9e-03 | 1.0e-03 | 2.2e-04 | 1.4e-04 | 1.4e-04 | 1.4e-04 |
+
+## Query read-out: measured excess MSE and the closed-form shot variance (S = 10³, models trained with exact expectations)
+
+Excess = test MSE with only the query circuits sampled − test MSE with exact expectations. Closed form: y_scale² Σ_i Σ_a R_ia² (1 − n_ia²) / ⌊S/3⌋ for X/Y/Z and y_scale² Σ_i |R_i|² (1 − cos_i²) / S for the programmed axis.
+
+| Task | Excess, X/Y/Z | Closed form, X/Y/Z | Excess, programmed axis | Closed form, programmed axis | Variance X/Y/Z ÷ programmed axis (closed form) |
+|---|---|---|---|---|---|
+| Bessel J2 | 5.78e-07 | 6.15e-07 | 2.61e-07 | 2.52e-07 | 2.4× |
+| NARMA10 | 1.42e-05 | 1.35e-05 | 4.89e-06 | 5.20e-06 | 2.6× |
+| Delayed quantum control | 8.41e-06 | 8.39e-06 | 2.26e-06 | 2.19e-06 | 3.8× |
+| Family: damped oscillation, noise 0.02 | 1.79e-06 | 1.98e-06 | 8.50e-07 | 6.45e-07 | 3.1× |
+| Family: Hénon map | 1.12e-02 | 1.10e-02 | 1.80e-03 | 1.75e-03 | 6.3× |
+
 ## Static device errors at test time (N = 16; test MSE, mean over 3 seeds; models trained on ideal circuits, no retraining, exact expectations)
 
 Read-out error e: every measured expectation v becomes (1 − 3e)·v + e (P(read 1 | 0) = e, P(read 0 | 1) = 2e). Depolarising p: v becomes (1 − p)·v. Over-rotation ε: every rotation angle is executed as (1 + ε)·angle. The error is the same in every circuit run of a window.

@@ -64,12 +64,12 @@ Better than the best of all re-implemented baselines in 24/24 cells.
 
 | Dataset | Printed in 2605.06734 (its GQKAN-QKANFWP) | Re-implemented baseline, paper protocol | Best tuned re-implemented baseline | QKAN-FWP+ (149 params) | HQKAN-Δ (136 params) | Linear AR(8), least squares (9 params) |
 |---|---|---|---|---|---|---|
-| Bessel J2 | 1.7e-05 | 6.5e-04 | 2.9e-06 | 1.5e-06 | 1.4e-07 | 5.3e-24 |
+| Bessel J2 | 1.7e-05 | 6.5e-04 | 2.9e-06 | 1.5e-06 | 1.4e-07 | 8.4e-17 |
 | Damped SHM | 4.0e-05 | 1.0e-04 | 5.8e-06 | 1.9e-06 | 3.2e-07 | 9.0e-14 |
 | NARMA5 | 3.9e-05 | 1.8e-03 | 1.7e-04 | 6.0e-06 | 2.9e-06 | 1.3e-06 |
 | NARMA10 | 7.5e-05 | 2.7e-03 | 6.0e-04 | 8.1e-06 | 2.7e-06 | 1.7e-06 |
 | Delayed quantum control | 7.9e-05 | 1.9e-03 | 4.1e-04 | 8.0e-06 | 3.5e-06 | 2.6e-07 |
-| Jaynes–Cummings | 2.1e-04 | 4.0e-05 | 1.2e-05 | 7.4e-09 | 1.7e-09 | 1.1e-31 |
+| Jaynes–Cummings | 2.1e-04 | 4.0e-05 | 1.2e-05 | 7.4e-09 | 1.7e-09 | 2.4e-16 |
 
 ## Models of this repository vs the numbers printed in the paper (Tables 4–6)
 
@@ -125,13 +125,13 @@ Better than the best of all re-implemented baselines in 24/24 cells.
 
 | Dataset | N | Best tuned re-implemented baseline | QKAN-FWP+ | HQKAN-Δ | Printed best, 2605.06734 | Printed best, 2607.27945 | Linear AR(3), 4 params | Linear AR(8), 9 params |
 |---|---|---|---|---|---|---|---|---|
-| Bessel J2 | 8 | 4.8e-06 | 1.1e-06 | 8.4e-08 | 2.5e-05 | 8.7e-06 | 7.4e-10 | **1.3e-23** |
-| Bessel J2 | 16 | 2.6e-06 | 1.6e-06 | 1.2e-07 | 1.1e-05 | 4.9e-06 | 7.2e-10 | **1.0e-23** |
-| Bessel J2 | 32 | 1.2e-06 | 1.4e-06 | 1.2e-07 | 1.5e-05 | 2.9e-06 | 6.1e-10 | **5.7e-24** |
-| Bessel J2 | 64 | 1.4e-06 | 2.0e-06 | 2.7e-07 | 2.1e-05 | 6.4e-06 | 2.1e-10 | **1.0e-24** |
+| Bessel J2 | 8 | 4.8e-06 | 1.1e-06 | 8.4e-08 | 2.5e-05 | 8.7e-06 | 7.4e-10 | **8.9e-17** |
+| Bessel J2 | 16 | 2.6e-06 | 1.6e-06 | 1.2e-07 | 1.1e-05 | 4.9e-06 | 7.2e-10 | **9.0e-17** |
+| Bessel J2 | 32 | 1.2e-06 | 1.4e-06 | 1.2e-07 | 1.5e-05 | 2.9e-06 | 6.1e-10 | **8.5e-17** |
+| Bessel J2 | 64 | 1.4e-06 | 2.0e-06 | 2.7e-07 | 2.1e-05 | 6.4e-06 | 2.1e-10 | **7.1e-17** |
 | Damped SHM | 8 | 4.4e-06 | 1.6e-06 | 2.5e-07 | 8.9e-05 | 1.2e-05 | 1.7e-08 | **1.1e-13** |
 | Damped SHM | 16 | 1.0e-05 | 1.4e-06 | 2.0e-07 | 3.6e-05 | 1.4e-05 | 9.8e-09 | **1.6e-13** |
-| Damped SHM | 32 | 4.3e-06 | 2.5e-06 | 5.2e-07 | 1.9e-05 | 3.6e-06 | 6.7e-09 | **8.9e-14** |
+| Damped SHM | 32 | 4.3e-06 | 2.5e-06 | 5.2e-07 | 1.9e-05 | 3.6e-06 | 6.7e-09 | **8.8e-14** |
 | Damped SHM | 64 | 1.5e-06 | 2.2e-06 | 4.2e-07 | 4.3e-05 | 1.0e-05 | 4.5e-09 | **4.3e-14** |
 | NARMA5 | 8 | 1.9e-04 | 3.6e-05 | 1.4e-05 | 5.0e-06 | **4.9e-06** | 8.0e-05 | 3.8e-05 |
 | NARMA5 | 16 | 1.7e-04 | 3.7e-06 | 1.8e-06 | 1.2e-05 | 5.2e-06 | 5.6e-05 | **5.3e-07** |
@@ -145,10 +145,10 @@ Better than the best of all re-implemented baselines in 24/24 cells.
 | Delayed quantum control | 16 | 4.6e-04 | 9.0e-06 | 5.9e-06 | 4.1e-05 | 6.9e-06 | 7.5e-05 | **3.0e-07** |
 | Delayed quantum control | 32 | 3.2e-04 | 4.3e-06 | 2.7e-06 | 5.3e-05 | 7.8e-06 | 6.7e-05 | **3.0e-07** |
 | Delayed quantum control | 64 | 3.1e-04 | 1.1e-05 | 2.8e-06 | 1.2e-04 | 4.8e-06 | 6.6e-05 | **2.4e-07** |
-| Jaynes–Cummings | 8 | 1.6e-05 | 7.7e-09 | 1.4e-09 | 9.2e-05 | 1.7e-05 | 3.9e-30 | **3.4e-31** |
-| Jaynes–Cummings | 16 | 1.0e-05 | 3.7e-09 | 1.7e-09 | 7.0e-05 | 3.2e-06 | 4.1e-30 | **1.2e-31** |
-| Jaynes–Cummings | 32 | 1.1e-05 | 6.2e-09 | 3.2e-09 | 2.0e-04 | 9.1e-06 | 6.3e-31 | **8.7e-32** |
-| Jaynes–Cummings | 64 | 1.0e-05 | 1.7e-08 | 1.2e-09 | 3.7e-05 | 7.0e-06 | 1.1e-29 | **4.6e-32** |
+| Jaynes–Cummings | 8 | 1.6e-05 | 7.7e-09 | 1.4e-09 | 9.2e-05 | 1.7e-05 | 2.4e-16 | **2.4e-16** |
+| Jaynes–Cummings | 16 | 1.0e-05 | 3.7e-09 | 1.7e-09 | 7.0e-05 | 3.2e-06 | **2.4e-16** | 2.4e-16 |
+| Jaynes–Cummings | 32 | 1.1e-05 | 6.2e-09 | 3.2e-09 | 2.0e-04 | 9.1e-06 | **2.4e-16** | 2.4e-16 |
+| Jaynes–Cummings | 64 | 1.0e-05 | 1.7e-08 | 1.2e-09 | 3.7e-05 | 7.0e-06 | 2.4e-16 | **2.4e-16** |
 
 - Linear AR(8) is below HQKAN-Δ in 21/24 cells and linear AR(3) in 12/24 cells.
 - Linear AR(8) is below the best printed number of both papers in 21/24 cells.

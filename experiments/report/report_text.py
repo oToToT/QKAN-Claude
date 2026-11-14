@@ -285,7 +285,7 @@ SETUP = r'''## 4. 實驗設定
 $[x_{t-N},\dots,x_{t-1}]$，預測 $x_t$（論文 6.1 節）。NARMA 也是如此——輸入 $u_t$ 只用來產生序列 $y_t$，模型讀的是 $y$ 的歷史、
 預測下一個 $y$；這和 reservoir computing 文獻裡「讀 $u$、輸出 $y$」的標準 NARMA 任務不同，本報告沒有做後者。論文沒寫 Bessel / SHM / DQC 的取樣點數，這裡統一用 300 點
 （NARMA 的 M = 300 與 JC 的 3000 點是論文給的）。因此 **time-series 的 MSE 絕對值不能直接和論文 Table 3–6 比**（5.3 節）。
-太陽黑子用的是同一份 SILSO V2.0 月資料前 3,326 筆，絕對值可以和論文 Table 7 比。
+太陽黑子用的是同一份 SILSO V2.0 月資料前 3,326 筆，用論文的切分方式時絕對值可以和論文 Table 7 比（切分的問題見第 8 節）。
 
 ### 4.2 訓練協定
 
@@ -299,10 +299,10 @@ $[x_{t-N},\dots,x_{t-1}]$，預測 $x_t$（論文 6.1 節）。NARMA 也是如�
   | GQKAN-QKANFWP（152） | 3e-2 | 1e-2 |
   | GQKAN-FWP（114） | 1e-1 | 3e-2 |
   | G-QKANFWP（175） | 3e-2 | 1e-2 |
-  | CMG（188）、CMG＋Δ-token＋residual（173） | 由 validation 選，見下表 | 由 validation 選，見下表 |
-
-<<cmg_lr>>
+  | CMG（188）、CMG＋Δ-token＋residual（173） | 3e-2 | 1e-2 |
   | QKAN-FWP+、HQKAN-Δ、QKAN-FWP-O | 3e-2 | 3e-2 |
+
+  CMG 的兩個模型各自從 1e-2、3e-2、1e-1（Jaynes–Cummings：1e-2、3e-2）中由 validation MSE 選出（`results/dev_cmg.jsonl`）。
 
 ### 4.3 模型選擇只用 validation
 
@@ -751,7 +751,7 @@ query 的量測基底可以由 context 決定（7.3 節），以及 context 與 
 - 另外兩個模型同樣受量測雜訊影響：$S \le 10^3$ 時它們的誤差由量測雜訊主導、大致與 $1/S$ 成正比。
 - 第 6 節用古典特徵的對照（同一個記憶配上 Fourier、tanh 或 MLP 特徵）完全不需要量測，所以沒有這一節討論的任何退化。
   在本報告測過的任務上，它們在精確期望值下已經和 QKAN-FWP-O 一樣好或更好；有限量測次數只會讓量子電路的版本更差。
-- 這裡只有統計（shot）雜訊，沒有硬體的閘誤差與退相干；真機沒有測。
+- 這一小節只有統計（shot）雜訊；靜態的硬體誤差見 7.4 節。沒有真機實驗。
 
 ### 7.2 Gram 矩陣的條件數與單精度
 
@@ -768,7 +768,7 @@ $C_T \succeq \Lambda_0$，所以條件數不超過 $(\lambda_{\max}(\Lambda_0) +
   （`precision='float32'`；token 與增量仍和其他模型一樣先用 float64 形成）之後，上表五個任務的 MSE 與 float64 幾乎相同，
   Bessel 仍是 1.4e-12。條件數 $10^6$ 乘上 float32 的 $6\times10^{-8}$ 表示 $R_T$ 的各個分量只有一到兩位有效數字，
   但預測需要的是殘差被擬合的程度，而線性求解對殘差是穩定的；加上模型預測的是增量 $x_{T+1}-x_T$，1e-12 的 MSE（RMS 誤差 $10^{-6}$）
-  並不需要雙精度。論文 benchmark 全部 24 格的 float32 結果在 5.4 節的消融表（整體 1.2 倍；Bessel、SHM 與 JC 不變），系統族上是 1.0 倍（第 6 節）。
+  並不需要雙精度。論文 benchmark 全部 24 格的 float32 結果在 5.4 節「其他設計選擇」的表（整體 1.2 倍；Bessel、SHM 與 JC 不變），系統族上是 1.0 倍（第 6 節）。
 
 ### 7.3 由 context 決定 query 的量測基底
 
@@ -791,7 +791,15 @@ $$\mathrm{Var}_{\text{axis}} = \frac{s_y^2}{S}\sum_i |\mathbf R_i|^2\,(1-\cos_i^
 
 <<shot_closed>>
 
-SHOT_AXIS_DISCUSSION
+- **封閉形式與模擬一致。** 只對 query 的電路抽樣時多出來的 MSE，和封閉形式算出的變異數在 Bessel、NARMA10、DQC 與 Hénon 上相差 5% 以內
+  （有雜訊的阻尼振盪是兩個幾乎相等的數相減，誤差較大）。也就是說，一次預測的 shot 誤差可以在量 query 之前由 $R_T$ 估計出來。
+- **沿 context 決定的量測軸讀出，query 的 shot 變異數降 2.4–6.3 倍**（Bessel 2.4、NARMA10 2.6、阻尼振盪 3.1、DQC 3.8、Hénon 6.3）。
+  三個基底平分預算本身就損失 3 倍，其餘的差別來自 $\mathbf R_i$ 與 $\mathbf n_i$ 的相對方向。
+- **剩下的瓶頸是 context 的電路。** 以精確期望值訓練的模型在 $S = 10^4$：Bessel 上 query（量測軸）貢獻 2.6e-8、context 貢獻 4.0e-8；
+  Hénon 上是 2.1e-4 對 1.3e-3。所以全部電路都抽樣時，整體的 MSE 只降 1.1–2.1 倍（$S = 10^2$：Bessel 5.2e-6 → 2.6e-6，Hénon 0.12 → 0.056）。
+  Context 的統計量 $k_tk_t^\top$ 需要完整的 Bloch vector，這裡沒有對應的省法；noise-aware 訓練之後的排序相同。
+- 這個讀出需要在 context 的量測結果出來之後才決定 query 的量測基底，所以一次預測要分兩輪執行電路（先 context、後 query）；
+  三個基底的讀出則可以一輪做完。
 
 ### 7.4 靜態的硬體誤差：context 內的校正
 

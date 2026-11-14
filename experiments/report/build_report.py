@@ -20,7 +20,6 @@ TABLES = {
     "ts_bydataset": ("tables_om.md", "QKAN-FWP-O against each model, by dataset"),
     "ts_cells": ("tables_om.md", "All cells: test MSE"),
     "ts_linear": ("tables_om.md", "Closed-form linear autoregression"),
-    "cmg_lr": ("tables_om.md", "Learning rates of the CMG baselines"),
     "feat_ts": ("tables_om.md", "Same memory, different features on the paper benchmarks"),
     "mem_ts": ("tables_om.md", "Same features, different memory rule on the paper benchmarks"),
     "feat_fam": ("tables_om.md", "Same memory, different features on the families"),
@@ -41,7 +40,6 @@ TABLES = {
     "shots": ("tables_om.md", "Finite-shot sensitivity"),
     "shots_cond": ("tables_om.md", "Condition number of the Gram matrix"),
     "cost": ("tables_om.md", "Cost of the read-out"),
-    "solar_all": ("tables_om.md", "Solar cycle: all models"),
     # results/tables_final.md: gated models, reproduction gap, robustness, solar details
     "fwp_ablation": ("tables_final.md", "QKAN-FWP+ ablation"),
     "gap": ("tables_final.md", "Reproduction gap"),
@@ -61,7 +59,7 @@ def table(file: str, heading: str) -> str:
     m = re.search(r"^## " + re.escape(heading) + r".*?\n\n(.*?)(?=\n## |\Z)", text, re.S | re.M)
     if not m:
         raise KeyError(f"no section starting with {heading!r} in results/{file}")
-    return m.group(1).strip()
+    return m.group(1).strip().replace("\n### ", "\n#### ")  # sub-headings of a table section sit below the report's ###
 
 
 def main():
