@@ -96,6 +96,11 @@ VARIANTS = {
                                              context_mode="diff", token_dtype="float64")),
     "lstm_ext8": dict(kind="lstm", model=dict(hidden=3, context=8, context_mode="diff", skip="last",
                                                token_dtype="float64")),
+    # HQKAN-Δ without the residual read-out, for tasks whose target is not the input series
+    "ar_hqkan8_noskip": dict(kind="ar", model=dict(context=8, hidden=4, latent=3, reps=3, skip="none",
+                                                    context_mode="diff", token_dtype="float64")),
+    # GQKAN-QKANFWP as it is built in the authors' released code (qkanfwp/authors.py), 159 parameters
+    "authors": dict(kind="authors", model=dict(hidden_size=8)),
     # ---- other paper variants (Table 1) and their extended versions ----------
     "gqkan_fwp": fwp(fast="linear", fast_out=3),  # HQKAN slow, linear fast
     "gqkan_fwp_ext": fwp(SKIP, DIF3, fast="linear", fast_out=3),
@@ -138,6 +143,7 @@ def om_variant(name: str) -> dict:
         "mlp": dict(quantum=False, classical="mlp"),
         "rls": dict(memory="rls"), "delta4": dict(memory="delta", delta_passes=4),
         "axis": dict(query_readout="axis"),
+        "noskip": dict(skip="none"),  # the target is not the next value of the input series
     }
     for extra in parts[2:]:
         if extra in switches:
@@ -230,6 +236,10 @@ def build_model(spec: dict, window: int, x_train):
         model = LSTMBaseline(**spec["model"])
     elif kind == "om":
         model = ObservableMemoryFWP(ObsMemConfig(max_len=window, **spec["model"]))
+    elif kind == "authors":
+        from qkanfwp.authors import AuthorsFWP
+
+        model = AuthorsFWP(**spec["model"])
     else:
         raise ValueError(kind)
     model.fit_token_scale(x_train)
@@ -249,17 +259,23 @@ def run_job(job: dict) -> dict:
     # Inputs are kept in float64 so that models with ``token_dtype='float64'``
     # can difference them exactly; every model casts to float32 internally.
     norm = job.get("norm", "global")
-    n_raw = len(data.GENERATORS[job["dataset"]]()) if norm == "train" else 0
-    # for norm='train' the scaling only sees the samples the training windows touch
-    fit_len = int(round((n_raw - job["window"]) * (0.8 if job["protocol"] == "paper" else 0.7))) + job["window"]
-    series = data.load_series(job["dataset"], dtype=np.float64, norm=norm, fit_len=fit_len)
-    x, y = data.make_windows(series, job["window"])
+    if job["dataset"] in data.CODE_INFO:
+        # datasets, windows and split exactly as in the authors' released code
+        x, y = data.code_windows(job["dataset"], job["window"])
+        parts = data.code_split(len(x), job["protocol"])
+    else:
+        n_raw = len(data.GENERATORS[job["dataset"]]()) if norm == "train" else 0
+        # for norm='train' the scaling only sees the samples the training windows touch
+        fit_len = int(round((n_raw - job["window"]) * (0.8 if job["protocol"] == "paper" else 0.7))) + job["window"]
+        series = data.load_series(job["dataset"], dtype=np.float64, norm=norm, fit_len=fit_len)
+        x, y = data.make_windows(series, job["window"])
+        parts = data.chrono_split(len(x), (0.8, 0.2) if job["protocol"] == "paper" else (0.7, 0.1, 0.2))
     x, y = torch.tensor(x), torch.tensor(y, dtype=torch.float32)
     if job["protocol"] == "paper":
-        tr, te = data.chrono_split(len(x), (0.8, 0.2))
+        tr, te = parts
         evals = {"train": (x[tr], y[tr]), "test": (x[te], y[te])}
     else:
-        tr, va, te = data.chrono_split(len(x), (0.7, 0.1, 0.2))
+        tr, va, te = parts
         evals = {"train": (x[tr], y[tr]), "val": (x[va], y[va]), "test": (x[te], y[te])}
 
     torch.manual_seed(job["seed"])

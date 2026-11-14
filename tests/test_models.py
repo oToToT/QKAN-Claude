@@ -211,3 +211,61 @@ def test_write_first_uses_the_newest_token():
     assert torch.allclose(w, gated_recursion(proposals, gate, None, model.group_index), atol=1e-5)
     assert model.memory_kernel(x).shape[1] == 9
     assert GatedFWP(FWPConfig(write_first=True))(x[:, :1]).shape == (2, 1)  # a single token still works
+
+
+def test_authors_model_has_the_structure_of_the_released_code():
+    """159 trainable parameters as in the paper; the slow QKAN (SiLU base term
+    with trainable weights) equals the layer of the qkan package; the closed
+    form equals the write-then-read recursion theta_t = (1-g) A_t (x) B_t + g theta_{t-1}."""
+    import qkan
+    import torch.nn.functional as F
+
+    from qkanfwp.authors import AuthorsFWP
+    from qkanfwp.daruan import daruan_pz
+
+    torch.manual_seed(0)
+    m = AuthorsFWP(hidden_size=8)
+    assert count_parameters(m) == 159
+    ref = qkan.QKAN(width=[3, 3], reps=1, ba_trainable=True)
+    with torch.no_grad():
+        m.slow.theta.copy_(ref.layers[0].theta)
+        m.slow_base.copy_(ref.layers[0].base_weight)
+        h = torch.randn(7, 3)
+        mine = daruan_pz(h, m.slow.theta).sum(-1) + F.silu(h) @ m.slow_base.T
+        assert torch.allclose(mine, ref(h), atol=1e-5)
+        x = torch.randn(4, 12, 1)
+        a, b, g = m.slow_programmer(x)
+        theta = torch.zeros(4, 3, 3, 2, 2)
+        for t in range(12):
+            gg = g[:, t].view(-1, 1, 1, 1, 1)
+            theta = (1 - gg) * torch.einsum("bld,bqe->blqde", a[:, t], b[:, t]) + gg * theta
+        assert torch.allclose(theta, m.fast_angles(x), atol=1e-6)
+        # write-then-read: the last token changes the angles it is read with
+        x2 = x.clone()
+        x2[:, -1] += 0.5
+        assert not torch.allclose(m.fast_angles(x2), m.fast_angles(x), atol=1e-4)
+        assert abs(float(torch.sigmoid(m.gate.bias)) - 0.8808) < 1e-3
+
+
+def test_authors_datasets_follow_the_released_generators():
+    import numpy as np
+
+    from qkanfwp import data
+
+    lengths = {"c_bessel": 256, "c_shm": 240, "c_dqc": 2200, "c_jc": 3000, "c_narma5": 300, "c_narma10": 300}
+    for name, n in lengths.items():
+        inp, tgt = data.code_series(name)
+        assert len(inp) == len(tgt) == n
+        x, y = data.code_windows(name, 16)
+        assert x.shape == (n - 17, 16, 1) and y.shape == (n - 17, 1)  # the authors' loop drops the last window
+        assert np.allclose(x[5, :, 0], inp[5:21], atol=1e-6) and np.allclose(y[5, 0], tgt[21], atol=1e-6)
+        tr, te = data.code_split(len(x))
+        assert len(tr) == int(0.8 * len(x)) and tr[-1] + 1 == te[0]
+    # NARMA: the window holds the drive u, the target is y, neither is rescaled
+    u, y = data.code_series("c_narma10")
+    assert not np.allclose(u, y) and u.max() < 0.2 and abs(y[0] - 0.196) < 1e-12
+    k = 50
+    assert abs(y[k + 1] - (0.3 * y[k] + 0.05 * y[k] * y[k - 9 : k + 1].sum() + 1.5 * u[k - 9] * u[k] + 0.1)) < 1e-12
+    for name in ("c_bessel", "c_shm", "c_dqc", "c_jc"):
+        s, _ = data.code_series(name)
+        assert abs(s.min() + 1) < 1e-12 and abs(s.max() - 1) < 1e-12

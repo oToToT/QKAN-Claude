@@ -178,3 +178,87 @@ def load_sunspots(n_records: int = 3326):
     raw = np.loadtxt(SUNSPOT_CSV, delimiter=";", usecols=3)[:n_records]
     lo, hi = raw.min(), raw.max()
     return raw.astype(np.float32), ((raw - lo) / (hi - lo)).astype(np.float32), (lo, hi)
+
+
+# ---------------------------------------------------------------------------
+# The same benchmarks as the authors' released code generates them
+# (https://github.com/MatthewPeng57/Gated-QKAN-FWP, commit 2cf0457,
+# ``times_series_benchmark/src/datasets``).  The code differs from the text of
+# the paper in several places; ``CODE_INFO`` lists the settings.  The most
+# important one: for NARMA the input window is the *drive* u and the target is
+# y, and neither is rescaled.
+# ---------------------------------------------------------------------------
+AUTHORS_JC_CSV = Path(__file__).resolve().parent.parent / "data" / "authors" / "jaynes_cummings.csv"
+
+CODE_INFO = {
+    "c_bessel": "J_2(x), x = linspace(2, 100, 256); min-max scaled to [-1, 1]",
+    "c_shm": "damped pendulum angular velocity, t = linspace(0, 20, 240), scipy odeint; scaled to [-1, 1]",
+    "c_narma5": "NARMA5, 300 steps, drive period 300, y_0 = 0.196; input window = u, target = y, no scaling",
+    "c_narma10": "NARMA10, 300 steps, drive period 300, y_0 = 0.196; input window = u, target = y, no scaling",
+    "c_dqc": "pulse train on x = arange(-2, 20, 0.01) (2200 samples); scaled to [-1, 1]",
+    "c_jc": "open Jaynes-Cummings qubit excitation, the authors' CUDA-Q trace (3000 samples); scaled to [-1, 1]",
+}
+CODE_INPUT_IS_TARGET = {"c_bessel": True, "c_shm": True, "c_dqc": True, "c_jc": True, "c_narma5": False, "c_narma10": False}
+
+
+def _minmax(s: np.ndarray) -> np.ndarray:
+    return 2.0 * (s - s.min()) / (s.max() - s.min()) - 1.0
+
+
+def narma_code(order: int, n: int = 300) -> tuple[np.ndarray, np.ndarray]:
+    """Drive ``u`` and output ``y`` of the authors' NARMA generator: the three
+    sine factors of u have period ``n`` (not 100), the history before t = 0 is
+    zero and y_0 = 0.196."""
+    t = np.arange(n)
+    u = 0.1 * (np.sin(2 * np.pi * 2.11 * t / n) * np.sin(2 * np.pi * 3.73 * t / n) * np.sin(2 * np.pi * 4.11 * t / n) + 1.0)
+    y = [0.196]
+    for k in range(n):
+        hist = sum(y[k - j] for j in range(order) if k - j >= 0)
+        u_lag = u[k - order + 1] if k - order + 1 >= 0 else 0.0
+        y.append(0.3 * y[k] + 0.05 * y[k] * hist + 1.5 * u_lag * u[k] + 0.1)
+    return u, np.array(y[:-1])
+
+
+def code_series(name: str) -> tuple[np.ndarray, np.ndarray]:
+    """``(inputs, targets)`` of one benchmark of the authors' code (float64)."""
+    if name == "c_bessel":
+        s = _minmax(jv(2, np.linspace(2.0, 100.0, 256)))
+    elif name == "c_shm":
+        from scipy.integrate import odeint
+
+        def rhs(state, _t):
+            return [state[1], -0.15 * state[1] - 9.81 * np.sin(state[0])]
+
+        s = _minmax(odeint(rhs, [0.0, 3.0], np.linspace(0.0, 20.0, 240))[:, 1])
+    elif name == "c_dqc":
+        x = np.arange(-2, 20, 0.01)
+        s = _minmax(sum(np.exp(-10.0 * (x - 2 * k) ** 2) * np.exp(-x / 16.0) for k in range(11)))
+    elif name == "c_jc":
+        s = _minmax(np.loadtxt(AUTHORS_JC_CSV))
+    elif name in ("c_narma5", "c_narma10"):
+        return narma_code(int(name[len("c_narma"):]))
+    else:
+        raise KeyError(name)
+    return s, s
+
+
+def code_windows(name: str, window: int):
+    """Windows as the authors' datasets slice them: ``x[i] = inputs[i : i+window]``,
+    ``y[i] = targets[i+window]`` for ``i < len - window - 1``, both stored in
+    float32 (returned here as float64 arrays holding the float32 values)."""
+    inp, tgt = code_series(name)
+    inp, tgt = inp.astype(np.float32).astype(np.float64), tgt.astype(np.float32)
+    n = len(inp) - window - 1
+    idx = np.arange(window)[None, :] + np.arange(n)[:, None]
+    return inp[idx][..., None], tgt[np.arange(n) + window][:, None]
+
+
+def code_split(n: int, protocol: str = "paper"):
+    """Chronological split by window index with the truncation of the authors'
+    code (``int(0.8 * n)``); ``'dev'`` cuts a validation part out of the
+    training windows (70 / 10 / 20)."""
+    cut = int(0.8 * n)
+    if protocol == "paper":
+        return np.arange(cut), np.arange(cut, n)
+    val = int(0.7 * n)
+    return np.arange(val), np.arange(val, cut), np.arange(cut, n)

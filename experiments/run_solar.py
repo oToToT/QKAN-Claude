@@ -16,6 +16,13 @@ removes the last 131 windows of the training and of the validation split, so
 that every target of a split precedes the first forecast origin of the next
 one (a split by target time).  Without the flag the split is the window-index
 split described in the paper.
+
+The authors' released code (https://github.com/MatthewPeng57/Gated-QKAN-FWP)
+differs from the text of the paper in two respects that this runner can
+reproduce: it trains on a file with 3,265 records that ends in 2021-01
+(``--records 3265``; 2,606 windows, split 2084 / 260 / 262), and its model
+(variant ``authors``, qkanfwp/authors.py) has a rank-one proposal, a
+write-then-read order and a BatchNorm / Dropout read-out.
 """
 
 from __future__ import annotations
@@ -77,6 +84,9 @@ VARIANTS = {
     "mtg_cyc_b24": dict(model={**BASE, **MTG, "skip": "cycle", "out_basis": 24}),
     # LSTM-S of the paper: LSTM(64) -> BatchNorm -> Dropout(0.3) -> Linear, 25,860 parameters
     "lstm_s": dict(kind="lstm", model=dict(hidden=64)),
+    # GQKAN-QKANFWP as built and trained in the authors' released code (12,474 parameters): mean-reduced
+    # peak-aware loss and the per-batch decay lr / (1 + 1e-6 step) of that code
+    "authors": dict(kind="authors", model={}, train=dict(schedule="keras", loss="mean")),
 }
 
 # Observable-memory FWP (qkanfwp/obsmem.py) for direct multi-step forecasting:
@@ -129,6 +139,10 @@ def build(spec):
         return GatedFWP(FWPConfig(**spec["model"]))
     if spec["kind"] == "om":
         return ObservableMemoryFWP(ObsMemConfig(**spec["model"]))
+    if spec["kind"] == "authors":
+        from qkanfwp.authors import AuthorsSolarFWP
+
+        return AuthorsSolarFWP(**spec["model"])
 
     class LSTMForecaster(nn.Module):
         def __init__(self, hidden):
@@ -154,10 +168,14 @@ def run_job(job: dict) -> dict:
     from qkanfwp.models import count_parameters
 
     spec = resolve(job["variant"])
-    raw, scaled, (lo, hi) = data.load_sunspots()
+    raw, scaled, (lo, hi) = data.load_sunspots(job.get("records") or 3326)
     x, y = data.make_windows(scaled, WINDOW, HORIZON)
     x, y = torch.tensor(x), torch.tensor(y)
     tr, va, te = data.chrono_split(len(x), tuple(job.get("split") or (0.8, 0.1, 0.1)))
+    if (job.get("records") or 3326) == 3265 and tuple(job.get("split") or (0.8, 0.1, 0.1)) == (0.8, 0.1, 0.1):
+        # the authors' code truncates: int(0.8 N), int(0.1 N), remainder -> 2084 / 260 / 262
+        a, b = int(0.8 * len(x)), int(0.8 * len(x)) + int(0.1 * len(x))
+        tr, va, te = np.arange(a), np.arange(a, b), np.arange(b, len(x))
     if job.get("purge"):
         tr, va = tr[: -(HORIZON - 1)], va[: -(HORIZON - 1)]
 
@@ -171,7 +189,8 @@ def run_job(job: dict) -> dict:
     alpha = 1.0
 
     def peak_loss(pred, target):
-        return (((pred - target) ** 2) * (1.0 + alpha * target)).sum() / len(pred)
+        weighted = ((pred - target) ** 2) * (1.0 + alpha * target)
+        return weighted.mean() if tkw.get("loss") == "mean" else weighted.sum() / len(pred)
 
     @torch.no_grad()
     def evaluate(idx):
@@ -188,7 +207,11 @@ def run_job(job: dict) -> dict:
 
     opt = torch.optim.Adam(model.parameters(), lr=tkw["lr"])
     steps = job["epochs"] * math.ceil(len(tr) / 32)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps) if tkw["schedule"] == "cosine" else None
+    sched = None
+    if tkw["schedule"] == "cosine":
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, steps)
+    elif tkw["schedule"] == "keras":
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda step: 1.0 / (1.0 + 1e-6 * step))
     gen = torch.Generator().manual_seed(job["seed"])
     tr_t = torch.tensor(tr)
     best, best_state, val_curve = None, None, []
@@ -242,7 +265,7 @@ def run_job(job: dict) -> dict:
 
 def key(job):
     return (job["variant"], job["seed"], job["lr"], job["epochs"], tuple(job.get("split") or (0.8, 0.1, 0.1)),
-            bool(job.get("purge")))
+            bool(job.get("purge")), job.get("records") or 3326)
 
 
 def main():
@@ -259,6 +282,8 @@ def main():
                     help="chronological train/val/test fractions (paper: 0.8 0.1 0.1)")
     ap.add_argument("--purge", action="store_true",
                     help="drop the last 131 windows of train and validation (no target overlap between splits)")
+    ap.add_argument("--records", type=int, default=3326,
+                    help="monthly records used (paper: 3326, to 2026-02; the authors' code: 3265, to 2021-01)")
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -266,7 +291,7 @@ def main():
     done = {key(json.loads(line)) for line in out.read_text().splitlines()} if out.exists() else set()
     jobs = [
         dict(variant=v, seed=s, lr=args.lr, epochs=args.epochs, threads=args.threads, save_dir=args.save_dir,
-             split=list(args.split), purge=args.purge)
+             split=list(args.split), purge=args.purge, records=args.records)
         for v, s in itertools.product(args.variants, args.seeds)
     ]
     jobs = [j for j in jobs if key(j) not in done]
