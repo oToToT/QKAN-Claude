@@ -70,7 +70,7 @@ def fl(x):
 
 
 def big(x):
-    return f"{x:.2g}" if x < 10 else f"{x:.0f}" if x < 1e4 else f"{x:.1e}".replace("e+0", "e")
+    return f"{x:.2g}" if x < 10 else f"{x:.0f}" if x < 1e4 else f"{x:.1e}".replace("e+0", "e").replace("e+", "e")
 
 
 def load():

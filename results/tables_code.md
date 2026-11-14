@@ -20,16 +20,16 @@ The paper states 50 epochs; the README of the code gives 100 epochs as the bench
 | NARMA10, u → y (300 samples) | 16 | 5.2e-05 | 3.9e-05 ± 1.8e-05 | 4.5e-05 | 8.3e-06 | 5 | 0.76× |
 | NARMA10, u → y (300 samples) | 32 | 5.5e-05 | 4.1e-05 ± 1.7e-05 | 3.0e-05 | 1.6e-05 | 5 | 0.75× |
 | NARMA10, u → y (300 samples) | 64 | 1.1e-04 | 5.5e-05 ± 2.2e-05 | 5.3e-05 | 2.2e-05 | 5 | 0.51× |
-| Delayed quantum control (2200 samples) | 8 | 4.8e-05 | 1.9e-05 ± 3.3e-06 | 1.9e-05 | 1.7e-05 | 3 | 0.4× |
-| Delayed quantum control (2200 samples) | 16 | 4.1e-05 | 2.6e-05 ± 9.2e-06 | 2.3e-05 | 1.5e-05 | 3 | 0.63× |
-| Delayed quantum control (2200 samples) | 32 | 8.9e-05 | 1.1e-04 ± 6.2e-05 | 1.0e-04 | 5.1e-05 | 3 | 1.2× |
-| Delayed quantum control (2200 samples) | 64 | 2.2e-04 | 5.2e-05 ± 5.2e-05 | 3.1e-05 | 5.1e-05 | 3 | 0.24× |
-| Jaynes–Cummings (3000 samples) | 8 | 2.0e-04 | 8.2e-05 ± 6.9e-06 | 8.7e-05 | 7.9e-05 | 3 | 0.41× |
-| Jaynes–Cummings (3000 samples) | 16 | 1.6e-04 | 9.9e-05 ± 7.9e-05 | 7.8e-05 | 2.2e-05 | 3 | 0.62× |
-| Jaynes–Cummings (3000 samples) | 32 | 2.0e-04 | 8.0e-05 ± 5.2e-05 | 9.3e-05 | 6.6e-05 | 3 | 0.41× |
-| Jaynes–Cummings (3000 samples) | 64 | 3.2e-04 | 3.0e-04 ± 3.0e-04 | 1.2e-04 | 2.6e-04 | 3 | 0.93× |
+| Delayed quantum control (2200 samples) | 8 | 4.8e-05 | 3.8e-05 ± 4.5e-05 | 1.9e-05 | 3.4e-05 | 5 | 0.79× |
+| Delayed quantum control (2200 samples) | 16 | 4.1e-05 | 5.2e-05 ± 6.5e-05 | 2.3e-05 | 5.3e-05 | 5 | 1.3× |
+| Delayed quantum control (2200 samples) | 32 | 8.9e-05 | 9.9e-05 ± 6.9e-05 | 1.0e-04 | 5.5e-05 | 5 | 1.1× |
+| Delayed quantum control (2200 samples) | 64 | 2.2e-04 | 6.1e-05 ± 6.0e-05 | 3.1e-05 | 5.5e-05 | 5 | 0.28× |
+| Jaynes–Cummings (3000 samples) | 8 | 2.0e-04 | 6.4e-05 ± 2.4e-05 | 7.3e-05 | 1.0e-04 | 5 | 0.32× |
+| Jaynes–Cummings (3000 samples) | 16 | 1.6e-04 | 7.6e-05 ± 6.9e-05 | 6.7e-05 | 3.8e-05 | 5 | 0.48× |
+| Jaynes–Cummings (3000 samples) | 32 | 2.0e-04 | 6.3e-05 ± 4.7e-05 | 5.7e-05 | 5.6e-05 | 5 | 0.32× |
+| Jaynes–Cummings (3000 samples) | 64 | 3.2e-04 | 1.9e-04 ± 2.7e-04 | 5.7e-05 | 1.6e-04 | 5 | 0.6× |
 
-- Geometric mean over the 24 cells of (re-run ÷ printed): 1.1× with the mean at 50 epochs, 0.66× with the median at 50 epochs, 0.59× with the mean at 100 epochs.
+- Geometric mean over the 24 cells of (re-run ÷ printed): 1.1× with the mean at 50 epochs, 0.62× with the median at 50 epochs, 0.65× with the mean at 100 epochs.
 
 ## Authors' datasets: per-dataset summary (geometric mean over N ∈ {8, 16, 32, 64} of the seed-mean test MSE)
 
@@ -41,8 +41,8 @@ On the two NARMA tasks the window holds the drive u and the target is y: the mod
 | Damped SHM (240 samples) | 8.8e-06 | 5.0e-05 | 2.6e-05 | 8.0e-06 | 9.0e-07 | 2.7e-07 | **7.3e-12** | *2.0e-12* | – |
 | NARMA5, u → y (300 samples) | 6.5e-06 | 1.8e-05 | 6.6e-06 | 9.7e-06 | 2.6e-06 | 2.4e-06 | **2.8e-07** | *5.3e-06* | *2.8e-09* |
 | NARMA10, u → y (300 samples) | 9.5e-06 | 5.2e-05 | 1.1e-05 | 8.5e-06 | 4.2e-06 | 2.5e-06 | **9.7e-07** | *4.8e-06* | *9.4e-08* |
-| Delayed quantum control (2200 samples) | 5.5e-06 | 4.1e-05 | 1.6e-05 | 3.4e-09 | 2.0e-08 | 7.5e-12 | **4.0e-13** | *2.8e-14* | – |
-| Jaynes–Cummings (3000 samples) | 7.6e-06 | 1.2e-04 | 5.5e-05 | 6.1e-09 | 2.7e-09 | 5.3e-12 | **2.1e-12** | *1.5e-13* | – |
+| Delayed quantum control (2200 samples) | 5.5e-06 | 5.9e-05 | 5.6e-05 | 4.7e-09 | 1.3e-08 | 6.0e-12 | **3.5e-13** | *2.8e-14* | – |
+| Jaynes–Cummings (3000 samples) | 7.6e-06 | 8.8e-05 | 4.9e-05 | 5.9e-09 | 6.4e-09 | 5.4e-12 | **2.1e-12** | *1.5e-13* | – |
 
 ## Authors' datasets: QKAN-FWP-O against each model (reference test MSE ÷ QKAN-FWP-O test MSE; above 1: QKAN-FWP-O is lower)
 
@@ -50,13 +50,13 @@ Geometric mean over the four windows per dataset; values below 1e-15 are clipped
 
 | Compared with | Bessel J2 | Damped SHM | NARMA5, u → y | NARMA10, u → y | Delayed quantum control | Jaynes–Cummings | Cells where QKAN-FWP-O is lower | Smallest … largest factor |
 |---|---|---|---|---|---|---|---|---|
-| GQKAN-QKANFWP, authors' code, lr 1e-3 | 3.1e7× | 6.9e6× | 65× | 54× | 1.0e8× | 5.7e7× | 24/24 | 11× … 2.3e8× |
-| GQKAN-QKANFWP, authors' code, tuned lr | 3.0e5× | 3.5e6× | 24× | 11× | 4.1e7× | 2.7e7× | 24/24 | 1.7× … 2.4e8× |
-| QKAN-FWP+ | 4.1e5× | 1.1e6× | 35× | 8.8× | 8690× | 2956× | 24/24 | 1× … 2.8e6× |
-| HQKAN-Δ | 5.2e4× | 1.2e5× | 9.3× | 4.3× | 5.0e4× | 1290× | 23/24 | 0.59× … 2.4e5× |
-| QKAN-FWP-O features, static observable | 1.0e4× | 3.7e4× | 8.8× | 2.6× | 19× | 2.6× | 21/24 | 0.17× … 5.5e4× |
-| *Best printed number of the two papers* | 6.5e5× | 1.2e6× | 23× | 9.8× | 1.4e7× | 3.7e6× | 24/24 | 3.6× … 1.8e7× |
-| *Linear on the last 8 inputs* | 0.0033× | 0.28× | 19× | 4.9× | 0.072× | 0.071× | 9/24 | 0.00066× … 234× |
+| GQKAN-QKANFWP, authors' code, lr 1e-3 | 3.1e7× | 6.9e6× | 65× | 54× | 1.7e8× | 4.1e7× | 24/24 | 11× … 2.3e8× |
+| GQKAN-QKANFWP, authors' code, tuned lr | 3.0e5× | 3.5e6× | 24× | 11× | 1.6e8× | 2.3e7× | 24/24 | 1.7× … 1.9e10× |
+| QKAN-FWP+ | 4.1e5× | 1.1e6× | 35× | 8.8× | 1.3e4× | 2750× | 24/24 | 1× … 2.8e6× |
+| HQKAN-Δ | 5.2e4× | 1.2e5× | 9.3× | 4.3× | 3.9e4× | 3007× | 23/24 | 0.59× … 2.4e5× |
+| QKAN-FWP-O features, static observable | 1.0e4× | 3.7e4× | 8.8× | 2.6× | 17× | 2.5× | 21/24 | 0.17× … 5.5e4× |
+| *Best printed number of the two papers* | 6.5e5× | 1.2e6× | 23× | 9.8× | 1.6e7× | 3.6e6× | 24/24 | 3.6× … 2.1e7× |
+| *Linear on the last 8 inputs* | 0.0033× | 0.28× | 19× | 4.9× | 0.081× | 0.068× | 9/24 | 0.00066× … 234× |
 | *Ridge on quadratic features (NARMA only)* | – | – | 0.01× | 0.097× | – | – | 0/8 | 0.0015× … 0.64× |
 
 ## Authors' datasets: all cells (test MSE, mean ± std over the seeds)
@@ -79,12 +79,35 @@ Geometric mean over the four windows per dataset; values below 1e-15 are clipped
 | NARMA10, u → y (300 samples) | 16 | 5 | 3.93e-05 ± 1.8e-05 | 1.73e-06 ± 3.8e-07 | 6.52e-06 ± 2.4e-06 | 1.59e-06 ± 1.4e-06 | 2.32e-06 ± 2.7e-07 | **1.78e-07 ± 7.5e-08** | *4.9e-06* | *6.8e-08* |
 | NARMA10, u → y (300 samples) | 32 | 5 | 4.14e-05 ± 1.7e-05 | 6.24e-06 ± 2.0e-06 | 7.93e-06 ± 2.7e-06 | 1.66e-05 ± 3.1e-05 | **1.83e-06 ± 2.9e-07** | 3.66e-06 ± 3.4e-07 | *4.0e-06* | *1.8e-08* |
 | NARMA10, u → y (300 samples) | 64 | 5 | 5.51e-05 ± 2.2e-05 | 2.81e-05 ± 3.0e-05 | 2.42e-05 ± 1.8e-05 | 4.85e-06 ± 3.4e-06 | 4.70e-06 ± 1.5e-06 | **3.29e-07 ± 1.5e-07** | *4.1e-06* | *2.4e-08* |
-| Delayed quantum control (2200 samples) | 8 | 3 | 1.91e-05 ± 3.3e-06 | 4.36e-06 ± 8.6e-07 | 7.38e-09 ± 8.2e-09 | 1.02e-08 ± 2.9e-09 | 2.80e-12 ± 7.4e-13 | **2.27e-13 ± 1.5e-13** | *2.8e-14* | – |
-| Delayed quantum control (2200 samples) | 16 | 3 | 2.60e-05 ± 9.2e-06 | 9.15e-05 ± 1.2e-04 | 2.19e-09 ± 4.4e-10 | 1.53e-08 ± 1.6e-08 | 1.12e-11 ± 1.4e-11 | **3.80e-13 ± 1.4e-13** | *2.8e-14* | – |
-| Delayed quantum control (2200 samples) | 32 | 3 | 1.11e-04 ± 6.2e-05 | 4.74e-06 ± 2.1e-06 | 1.78e-09 ± 1.7e-10 | 3.97e-08 ± 4.8e-08 | 1.16e-11 ± 9.3e-12 | **4.84e-13 ± 1.5e-13** | *2.8e-14* | – |
-| Delayed quantum control (2200 samples) | 64 | 3 | 5.24e-05 ± 5.2e-05 | 3.62e-05 ± 4.2e-05 | 4.83e-09 ± 4.4e-09 | 2.39e-08 ± 3.0e-08 | 8.86e-12 ± 3.0e-12 | **5.83e-13 ± 1.7e-13** | *2.9e-14* | – |
-| Jaynes–Cummings (3000 samples) | 8 | 3 | 8.24e-05 ± 6.9e-06 | 2.61e-05 ± 3.7e-06 | 6.52e-09 ± 2.2e-09 | 7.23e-10 ± 4.6e-10 | **5.63e-13 ± 1.4e-13** | 3.24e-12 ± 2.8e-13 | *1.5e-13* | – |
-| Jaynes–Cummings (3000 samples) | 16 | 3 | 9.90e-05 ± 7.9e-05 | 5.39e-05 ± 4.8e-06 | 1.02e-08 ± 1.1e-08 | 9.25e-09 ± 1.2e-08 | 8.03e-12 ± 8.9e-12 | **1.21e-12 ± 1.5e-13** | *1.5e-13* | – |
-| Jaynes–Cummings (3000 samples) | 32 | 3 | 8.00e-05 ± 5.2e-05 | 3.04e-05 ± 4.7e-06 | 1.12e-08 ± 1.1e-08 | 1.83e-09 ± 9.4e-10 | 1.52e-11 ± 1.5e-11 | **1.24e-12 ± 6.0e-13** | *1.5e-13* | – |
-| Jaynes–Cummings (3000 samples) | 64 | 3 | 2.99e-04 ± 3.0e-04 | 2.20e-04 ± 2.7e-04 | 1.88e-09 ± 4.9e-10 | 4.10e-09 ± 2.5e-09 | 1.18e-11 ± 9.8e-13 | **3.70e-12 ± 1.3e-12** | *1.5e-13* | – |
+| Delayed quantum control (2200 samples) | 8 | 5 | 3.77e-05 ± 4.5e-05 | 3.90e-06 ± 1.0e-06 | 1.04e-08 ± 1.0e-08 | 6.70e-09 ± 4.9e-09 | 2.77e-12 ± 6.1e-13 | **1.82e-13 ± 1.3e-13** | *2.8e-14* | – |
+| Delayed quantum control (2200 samples) | 16 | 5 | 5.19e-05 ± 6.5e-05 | 5.63e-05 ± 1.0e-04 | 2.66e-09 ± 2.0e-09 | 1.02e-08 ± 1.4e-08 | 7.77e-12 ± 1.2e-11 | **3.31e-13 ± 1.7e-13** | *2.8e-14* | – |
+| Delayed quantum control (2200 samples) | 32 | 5 | 9.89e-05 ± 6.9e-05 | 4.77e-06 ± 1.9e-06 | 4.64e-09 ± 6.0e-09 | 2.42e-08 ± 4.1e-08 | 7.91e-12 ± 8.5e-12 | **4.92e-13 ± 2.5e-13** | *2.8e-14* | – |
+| Delayed quantum control (2200 samples) | 64 | 5 | 6.10e-05 ± 6.0e-05 | 9.67e-03 ± 1.9e-02 | 3.71e-09 ± 3.6e-09 | 2.00e-08 ± 2.5e-08 | 7.64e-12 ± 4.0e-12 | **4.99e-13 ± 2.4e-13** | *2.9e-14* | – |
+| Jaynes–Cummings (3000 samples) | 8 | 5 | 6.44e-05 ± 2.4e-05 | 2.56e-05 ± 3.0e-06 | 4.59e-09 ± 3.0e-09 | 2.32e-09 ± 2.0e-09 | **5.96e-13 ± 2.1e-13** | 3.44e-12 ± 4.0e-13 | *1.5e-13* | – |
+| Jaynes–Cummings (3000 samples) | 16 | 5 | 7.62e-05 ± 6.9e-05 | 5.43e-05 ± 6.0e-06 | 6.96e-09 ± 9.2e-09 | 7.73e-09 ± 9.3e-09 | 6.80e-12 ± 7.5e-12 | **1.18e-12 ± 1.3e-13** | *1.5e-13* | – |
+| Jaynes–Cummings (3000 samples) | 32 | 5 | 6.29e-05 ± 4.7e-05 | 2.92e-05 ± 3.9e-06 | 9.41e-09 ± 9.4e-09 | 9.83e-09 ± 1.5e-08 | 1.12e-11 ± 1.3e-11 | **1.40e-12 ± 6.3e-13** | *1.5e-13* | – |
+| Jaynes–Cummings (3000 samples) | 64 | 5 | 1.92e-04 ± 2.7e-04 | 1.40e-04 ± 2.3e-04 | 4.02e-09 ± 5.0e-09 | 9.83e-09 ± 1.2e-08 | 1.93e-11 ± 2.1e-11 | **3.73e-12 ± 1.0e-12** | *1.5e-13* | – |
+
+## Solar cycle with the file, split and model of the authors' code (3,265 records to 2021-01; 2,606 windows; lr 2.5e-3)
+
+Test windows 2345–2606 (targets 1988-04 … 2021-01) in both splits; test metrics at the best-validation checkpoint, mean ± std over seeds.
+
+### window-index split 2084 / 260 / 262 (the authors' split; targets of neighbouring splits overlap by 131 months)
+
+| Model | Params | Seeds | Scaled MSE ↓ | PAE ↓ | PTE ↓ |
+|---|---|---|---|---|---|
+| GQKAN-QKANFWP, authors' code | 12,474 | 5 | 0.0169 ± 0.0017 | 46.4 ± 7.0 | 23.0 ± 1.3 |
+| QKAN-FWP+ | 11,732 | 5 | 0.0155 ± 0.0015 | 34.5 ± 2.3 | 17.6 ± 1.9 |
+| QKAN-FWP-O without fast weights (static observable) | 496 | 5 | 0.0156 ± 0.0003 | 35.0 ± 1.0 | 18.6 ± 0.7 |
+| QKAN-FWP-O | 547 | 5 | 0.0145 ± 0.0009 | 33.5 ± 0.3 | 18.6 ± 1.6 |
+| *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | 0.0177 | 31.8 | 11.7 |
+| *Printed in arXiv:2605.06734 for GQKAN-QKANFWP* | 12,474 | 5 | 0.0168 ± 0.0016 | 39.59 ± 2.82 | 21.89 ± 1.57 |
+
+### split by target time (the last 131 windows of train and validation removed)
+
+| Model | Params | Seeds | Scaled MSE ↓ | PAE ↓ | PTE ↓ |
+|---|---|---|---|---|---|
+| QKAN-FWP-O without fast weights (static observable) | 496 | 5 | 0.0160 ± 0.0002 | 34.9 ± 0.5 | 19.4 ± 1.7 |
+| QKAN-FWP-O | 547 | 3 | 0.0182 ± 0.0004 | 43.1 ± 3.2 | 32.7 ± 2.1 |
+| *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | 0.0177 | 31.8 | 11.7 |
 
