@@ -267,7 +267,7 @@ def solar_part(out):
         return
     anchor = solar_anchor(False)
     out += ["## Solar cycle with the file, split and model of the authors' code (3,265 records to 2021-01; 2,606 windows; lr 2.5e-3)\n",
-            "Test windows 2345–2606 (targets 1988-04 … 2021-01) in both splits; test metrics at the best-validation checkpoint, mean ± std over seeds.\n"]
+            "Test windows 2345–2606 (targets 1988-05 … 2021-01) in both splits; test metrics at the best-validation checkpoint, mean ± std over seeds.\n"]
     for purge, title in ((False, "window-index split 2084 / 260 / 262 (the authors' split; targets of neighbouring splits overlap by 131 months)"),
                          (True, "split by target time (the last 131 windows of train and validation removed)")):
         if not any(k[0] == purge for k in rows):

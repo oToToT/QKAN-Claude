@@ -90,7 +90,7 @@ Geometric mean over the four windows per dataset; values below 1e-15 are clipped
 
 ## Solar cycle with the file, split and model of the authors' code (3,265 records to 2021-01; 2,606 windows; lr 2.5e-3)
 
-Test windows 2345–2606 (targets 1988-04 … 2021-01) in both splits; test metrics at the best-validation checkpoint, mean ± std over seeds.
+Test windows 2345–2606 (targets 1988-05 … 2021-01) in both splits; test metrics at the best-validation checkpoint, mean ± std over seeds.
 
 ### window-index split 2084 / 260 / 262 (the authors' split; targets of neighbouring splits overlap by 131 months)
 
@@ -107,7 +107,9 @@ Test windows 2345–2606 (targets 1988-04 … 2021-01) in both splits; test metr
 
 | Model | Params | Seeds | Scaled MSE ↓ | PAE ↓ | PTE ↓ |
 |---|---|---|---|---|---|
+| GQKAN-QKANFWP, authors' code | 12,474 | 5 | 0.0185 ± 0.0020 | 46.2 ± 5.0 | 24.3 ± 1.9 |
+| QKAN-FWP+ | 11,732 | 5 | 0.0165 ± 0.0018 | 32.6 ± 3.1 | 15.8 ± 2.9 |
 | QKAN-FWP-O without fast weights (static observable) | 496 | 5 | 0.0160 ± 0.0002 | 34.9 ± 0.5 | 19.4 ± 1.7 |
-| QKAN-FWP-O | 547 | 3 | 0.0182 ± 0.0004 | 43.1 ± 3.2 | 32.7 ± 2.1 |
+| QKAN-FWP-O | 547 | 5 | 0.0184 ± 0.0004 | 43.4 ± 2.5 | 32.5 ± 1.7 |
 | *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | 0.0177 | 31.8 | 11.7 |
 

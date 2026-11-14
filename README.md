@@ -6,7 +6,9 @@
 論文把 fast-weight programmer 的 slow／fast 兩個網路都換成 QKAN（edge activation 是單 qubit 的 data re-uploading 電路），
 並用 scalar gate 更新 fast weights。這個 repo 包含：
 
-- 論文模型（GQKAN-QKANFWP 與另外兩個 QKAN 變體）以及後續論文的 CMG gate（arXiv:2607.27945）的重新實作；
+- 只依論文文字的重新實作：論文模型（GQKAN-QKANFWP 與另外兩個 QKAN 變體）以及後續論文的 CMG gate（arXiv:2607.27945）；
+- 依[作者公開程式碼](https://github.com/MatthewPeng57/Gated-QKAN-FWP)的設定所做的對照：程式碼和論文的文字有幾處不同
+  （NARMA 讀的是驅動訊號 u 而不是 y、各序列的取樣點數、模型的細節），所以資料集與 baseline 模型都另外照程式碼做了一份；
 - 三個 QKAN-based、參數量不超過論文（159）的模型：
 
   | 模型 | 是什麼 | 參數量 |
@@ -36,9 +38,26 @@
 | Delayed quantum control | 5.5e-06 | 4.4e-04 | 8.0e-06 | 3.5e-06 | **2.2e-08** | 2.6e-07 |
 | Jaynes–Cummings | 7.6e-06 | 1.7e-05 | 7.4e-09 | 1.7e-09 | **4.7e-13** | 2.4e-16 |
 
+同樣六個 benchmark，資料、切分與 baseline 模型改依作者公開的程式碼（NARMA 讀 u 預測 y、不正規化；baseline 是從程式碼移植的
+159 參數模型，在這組設定下它重現了論文印出的數字：重跑 ÷ 印出的幾何平均是 1.1 倍）：
+
+| 資料集（作者程式碼的設定） | 兩篇論文印出的最佳數字 | 作者模型，lr 1e-3 | 作者模型，調過 lr | QKAN-FWP+ | HQKAN-Δ | **QKAN-FWP-O** | 封閉形式的參考線 |
+|---|---|---|---|---|---|---|---|
+| Bessel J2（256 點） | 5.3e-06 | 2.5e-04 | 2.5e-06 | 3.4e-06 | 4.3e-07 | **8.2e-12** | 2.7e-14（線性） |
+| Damped SHM（240 點） | 8.8e-06 | 5.0e-05 | 2.6e-05 | 8.0e-06 | 9.0e-07 | **7.3e-12** | 2.0e-12（線性） |
+| NARMA5，u → y | 6.5e-06 | 1.8e-05 | 6.6e-06 | 9.7e-06 | 2.6e-06 | **2.8e-07** | 2.8e-09（二次特徵的 ridge） |
+| NARMA10，u → y | 9.5e-06 | 5.2e-05 | 1.1e-05 | 8.5e-06 | 4.2e-06 | **9.7e-07** | 9.4e-08（二次特徵的 ridge） |
+| Delayed quantum control（2200 點） | 5.5e-06 | 5.9e-05 | 5.6e-05 | 4.7e-09 | 1.3e-08 | **3.5e-13** | 2.8e-14（線性） |
+| Jaynes–Cummings（3000 點） | 7.6e-06 | 8.8e-05 | 4.9e-05 | 5.9e-09 | 6.4e-09 | **2.1e-12** | 1.5e-13（線性） |
+
+![authors' settings](figures/code_protocol.png)
+
 **1. 在 QKAN-based 的架構之間，閉迴路的量測算符記憶明顯較準。**
-QKAN-FWP-O 在 24 格全部低於重新實作的 GQKAN-QKANFWP、CMG 與 QKAN-FWP+；對沒有記憶的 HQKAN-Δ 是 23 格較低、1 格輸（NARMA5，N = 8）。
+依論文文字的設定：QKAN-FWP-O 在 24 格全部低於重新實作的 GQKAN-QKANFWP、CMG 與 QKAN-FWP+；對沒有記憶的 HQKAN-Δ 是 23 格較低、1 格輸（NARMA5，N = 8）。
 差距依資料集而定：對 HQKAN-Δ，NARMA 低 7–9 倍，DQC 低約 160 倍，Bessel 與 Damped SHM 低四到五個數量級。
+依作者程式碼的設定：QKAN-FWP-O 在 24 格全部低於調過 learning rate 的作者模型（NARMA 低 11–24 倍，其餘四條序列低五到八個數量級），
+23 格低於 HQKAN-Δ。作者版的 NARMA 視窗裡只有 u、沒有 y，context 沒有目標可寫，那裡的 QKAN-FWP-O 是用同一個封閉形式、
+由訓練集的歷史解量測算符的版本。
 在「每條序列物理參數都不同」的系統族上（模型必須從 16 步的視窗辨識系統；`qkanfwp/families.py`），它在 10 格中的 9 格比其他架構低：
 沒有雜訊時低 15 倍到約 2 萬倍，有雜訊時低 1.1–2.3 倍。
 
@@ -78,25 +97,30 @@ reps = 1 的 Bloch 特徵恰好是一次諧波的 Fourier 特徵。把它換成�
   ![device errors](figures/om_device.png)
 
 **4. 論文型態的記憶（由 slow programmer 產生旋轉角）在這些 benchmark 上沒有幫助**：沒有 fast weights 的 HQKAN-Δ 在每一格都比
-QKAN-FWP+ 好，也在 24 格中的 21 格比給了相同 token 的 CMG 好。
+QKAN-FWP+ 好，也在 24 格中的 21 格比給了相同 token 的 CMG 好（依論文文字的設定）；依作者程式碼的設定，它在六個資料集都比調過
+learning rate 的作者模型低（2.5 倍到近四個數量級）。
 
 **5. 太陽黑子週期預測**：論文對 sliding window 的索引做切分，相鄰 split 的 targets 重疊 131 個月。改成依 target 時間切分之後，
 沒有模型穩定贏過零參數的「重複上一個週期」；QKAN-FWP-O 的靜態版本以 496 個參數（論文模型的 4%）在三種切分上都比重新實作的 baseline 低
-（7–28%），有記憶的版本比靜態版本差。
+（7–28%），有記憶的版本比靜態版本差。改用作者程式碼的資料檔（3,265 筆）與移植的 12,474 參數模型，結論相同：移植的模型在作者的切法下
+重現了論文的 0.0168（0.0169 ± 0.0017）；依 target 時間切分時，靜態版本比它低 14%。
 
 ## 解讀時要注意
 
 - **不主張量子優勢，特徵映射也不是貢獻。** 模型可以古典模擬；同一個記憶配上古典特徵一樣好或更好，而且不需要量測。
   QKAN 的表述帶來的是上面第 3 點的性質：一個要在量子硬體上執行的 FWP，fast weights 該放在哪裡、代價是什麼。
-- **六個 benchmark 幾乎是線性問題**：9 個參數的線性 AR(8)（最小平方，不需要訓練）在 24 格中的 21 格贏過兩篇論文印出的最佳數字；
-  對 QKAN-FWP-O 是 13 格較低、11 格較高（NARMA 與 DQC）。
-- **NARMA 照論文的定義**：讀 y 的歷史、預測下一個 y，不是「讀 u 預測 y」的標準 NARMA 任務。
-- **沒有重現論文印出的 baseline 數字**（論文協定下差 21 倍，調過 learning rate 後差 1.9 倍），所以倍數都是同一個 pipeline 內的比較。
+- **這些 benchmark 用封閉形式的最小平方就能解得更好**：一步預測的序列幾乎是線性問題，9 個參數的線性 AR(8)（不需要訓練）在 24 格中的
+  21 格贏過兩篇論文印出的最佳數字，對 QKAN-FWP-O 是 13 格較低、11 格較高。作者版的 NARMA 是二次回歸問題：對最近 12 個 u 的二次特徵做
+  ridge 比所有模型（包括 QKAN-FWP-O）低 10 倍以上。
+- **論文的文字和作者的程式碼不一致**（REPORT 4.6 節）：NARMA 在文字裡是讀 y 預測下一個 y，在程式碼裡是讀 u 預測 y 且不正規化；
+  取樣點數、太陽黑子檔案的長度（3,326 對 3,265 筆）與模型細節也不同。兩組設定都跑了，數字不能互相比較。
+- **和論文印出數字的關係**：只依論文文字的重新實作沒有重現印出的數字（論文協定下差 21 倍）；改用程式碼的資料設定與移植的模型之後重現了
+  （幾何平均 1.1 倍）。所有倍數都是同一組設定內的比較。
 - In-context 最小平方本身是既有方法（ALPaCA、mesa-layer、delta rule）；新的部分是把它接到量子 FWP 上以及由此得到的硬體性質。
 - **有限量測次數**（每個電路的 shot 預算在 X／Y／Z 三個基底間平分，binomial 抽樣）：以精確期望值訓練的 QKAN-FWP-O 對量測雜訊很敏感，
   訓練時加入量測雜訊可以修正；在需要非線性特徵的 Hénon map 上，每個電路約 10⁴ 次量測以上才優於靜態模型，10² 次時反而較差。
 - 硬體誤差只模擬了靜態的讀出誤差、去極化與過旋轉；in-context 校正只對一個視窗內不變的誤差成立。
-- 沒有做：「讀 u 預測 y」的 NARMA、MiniGrid 強化學習、真機實驗、以多 qubit VQC 為 fast programmer 的模型。
+- 沒有做：MiniGrid 強化學習、真機實驗、以多 qubit VQC 為 fast programmer 的模型。
 
 ## 內容
 
@@ -105,8 +129,9 @@ QKAN-FWP+ 好，也在 24 格中的 21 格比給了相同 token 的 CMG 好。
 | `REPORT.md` | 論文機制、相關研究、模型、實驗設定、所有結果與限制 |
 | `qkanfwp/daruan.py` | DARUAN / QKAN layer 的函數式實作（支援每個樣本各自的角度、Bloch vector 輸出、有限量測次數與靜態硬體誤差的模擬），與官方 `qkan` 套件數值一致 |
 | `qkanfwp/models.py` | Gated fast-weight programmer（論文 Eq. 3–4；scalar／分組／CMG gate）、差分 token、residual 讀出、HQKAN-Δ、LSTM 對照 |
+| `qkanfwp/authors.py` | 依作者公開的程式碼移植的 GQKAN-QKANFWP（time-series 159 參數、太陽黑子 12,474 參數） |
 | `qkanfwp/obsmem.py` | QKAN-FWP-O：以量測算符為 fast weights 的閉迴路記憶（一步與 direct multi-step），以及古典特徵與其他記憶規則的對照 |
-| `qkanfwp/data.py`, `qkanfwp/families.py` | 論文的資料集；參數逐序列隨機的系統族 |
+| `qkanfwp/data.py`, `qkanfwp/families.py` | 論文的資料集（依論文文字，以及依作者程式碼的 `c_*` 版本）；參數逐序列隨機的系統族 |
 | `experiments/run_timeseries.py` | 一步預測 benchmark（論文 Sec. 6.1） |
 | `experiments/run_family.py` | 系統族上的 in-context 預測與封閉形式的參考線 |
 | `experiments/run_solar.py` | 太陽黑子週期 direct multi-step 預測（論文 Sec. 6.2）；`--purge` 依 target 時間切分 |
@@ -115,7 +140,8 @@ QKAN-FWP+ 好，也在 24 格中的 21 格比給了相同 token 的 CMG 好。
 | `experiments/cost.py`, `experiments/resources.py` | 讀出規則的計時；每次預測的電路執行次數、量測設定與古典成本 |
 | `experiments/memory_probe.py` | QKAN-FWP-O 學到的記憶權重（每個 context 配對的權重） |
 | `experiments/reference_baselines.py` | 線性 AR 參考線 |
-| `experiments/make_figures.py`, `experiments/make_om_report.py` | 由 `results/*.jsonl` 產生表格與 `figures/` |
+| `experiments/make_figures.py`, `experiments/make_om_report.py`, `experiments/make_code_report.py` | 由 `results/*.jsonl` 產生表格與 `figures/` |
+| `experiments/check_authors_port.py` | 在有作者程式碼的環境下，直接比對移植的模型與作者的模型（選用） |
 | `experiments/report/` | `REPORT.md` 的文字來源與組裝程式 |
 | `experiments/run_all.sh` | 重現所有數字的完整指令 |
 | `results/` | 所有 run 的原始結果（說明見 `results/README.md`） |
@@ -132,7 +158,7 @@ python experiments/run_timeseries.py --datasets narma10 --windows 16 \
     --variants base base@cos30 ar_hqkan8@cos30 om_c0h6r1_p5@cos30 --out results/quick.jsonl
 python experiments/aggregate.py results/quick.jsonl
 
-# 全部重現（約 35 CPU core-hours，可中斷續跑）
+# 全部重現（約 45 CPU core-hours，可中斷續跑）
 bash experiments/run_all.sh
 ```
 
@@ -141,3 +167,4 @@ Variant 名稱後的 `@cos30` 表示 cosine schedule、初始 learning rate 30e-
 ## 資料來源
 
 太陽黑子資料來自 WDC-SILSO（Royal Observatory of Belgium, Brussels），CC BY-NC 4.0，見 `data/README.md`。
+`data/authors/jaynes_cummings.csv` 來自作者公開的程式碼（Apache-2.0），見 `data/authors/README.md`。
