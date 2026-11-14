@@ -105,12 +105,12 @@ Geometric mean over the four windows per dataset; the last two columns count the
 | Variant | Params | Bessel J2 | Damped SHM | NARMA5 | NARMA10 | Delayed quantum control | Jaynes–Cummings | vs first row |
 |---|---|---|---|---|---|---|---|---|
 | Bloch vectors of 6 circuits, reps = 1 (QKAN-FWP-O) | 130–154 | 2.8e-12 | 5.9e-12 | 4.0e-07 | 3.2e-07 | 2.2e-08 | 4.7e-13 | – |
-| cos u, sin u of the same 6 units (same function space, no circuit) | 112 | – | – | – | – | – | – | 1.1× |
-| cos u, sin u of 8 units (same number of features) | 148 | – | – | – | – | – | – | 0.71× |
+| cos u, sin u of the same 6 units (same function space, no circuit) | 88–112 | 2.9e-12 | 6.0e-12 | 4.2e-07 | 4.3e-07 | 2.5e-08 | – | 1.1× |
+| cos u, sin u of 8 units (same number of features) | 116–148 | 2.0e-12 | 4.6e-12 | 3.7e-07 | 3.1e-07 | 3.1e-08 | – | 0.94× |
 | cos(w·u + b), 3 per unit, w and b trainable | 142–166 | 2.7e-12 | 6.4e-12 | 4.2e-07 | 5.3e-07 | 2.0e-08 | 4.4e-13 | 1.1× |
 | tanh(w·u + b), 3 per unit | 142–166 | 2.5e-12 | 5.5e-12 | 4.4e-07 | 2.9e-07 | 2.1e-08 | 3.8e-13 | 0.92× |
-| products u_i·u_j (quadratic polynomial) | 139 | – | – | – | – | – | – | 1× |
-| 8 tanh units of a second layer (small MLP) | 156 | – | – | – | – | – | – | 0.58× |
+| products u_i·u_j (quadratic polynomial) | 115–139 | 8.8e-13 | 8.2e-12 | 5.2e-07 | 5.4e-07 | 5.3e-08 | – | 1.2× |
+| 8 tanh units of a second layer (small MLP) | 132–156 | 1.7e-12 | 2.9e-12 | 6.3e-07 | 3.1e-07 | 2.6e-08 | – | 0.89× |
 | linear term only | 52–76 | 1.4e-12 | 1.9e-11 | 6.4e-07 | 4.5e-07 | 4.9e-08 | 1.1e-13 | 1.1× |
 
 ## Same features, different memory rule on the paper benchmarks (test MSE, geometric mean over the four windows; last column: factor to the first row over the cells both have)
@@ -118,11 +118,11 @@ Geometric mean over the four windows per dataset; the last two columns count the
 | Variant | Params | Bessel J2 | Damped SHM | NARMA5 | NARMA10 | Delayed quantum control | Jaynes–Cummings | vs first row |
 |---|---|---|---|---|---|---|---|---|
 | gated least squares, prior in every write (QKAN-FWP-O) | 130–154 | 2.8e-12 | 5.9e-12 | 4.0e-07 | 3.2e-07 | 2.2e-08 | 4.7e-13 | – |
-| exponentially weighted RLS (prior only as the initial condition) | 154 | – | – | – | – | – | – | 0.23× |
+| exponentially weighted RLS (prior only as the initial condition) | 130–154 | 8.0e-13 | 4.3e-13 | 7.4e-07 | 5.9e-07 | 1.4e-08 | – | 0.54× |
 | least squares without gate (uniform weights) | 104–128 | 3.4e-12 | 3.0e-12 | 1.2e-06 | 1.5e-06 | 3.0e-08 | – | 1.7× |
-| normalised delta rule, 4 sweeps over the context | 154 | – | – | – | – | – | – | 102× |
+| normalised delta rule, 4 sweeps over the context | 130–154 | 1.3e-09 | 3.9e-08 | 9.5e-07 | 1.5e-06 | 4.5e-07 | – | 59× |
 | normalised delta rule, 1 sweep | 130–154 | 2.5e-09 | 2.3e-08 | 9.2e-07 | 1.5e-06 | 4.9e-07 | – | 62× |
-| no memory, 9 circuits (same number of parameters) | 154 | – | – | – | – | – | – | 148× |
+| no memory, 9 circuits (same number of parameters) | 118–154 | 1.4e-08 | 8.5e-08 | 2.0e-06 | 2.0e-06 | 1.2e-06 | – | 164× |
 | no memory, 6 circuits | 79–103 | 2.4e-08 | 9.3e-08 | 2.1e-06 | 2.2e-06 | 1.2e-06 | 4.0e-13 | 77× |
 
 ## QKAN-FWP-O ablation on the paper benchmarks (test MSE ÷ full model, geometric mean over the cells both have)
