@@ -117,7 +117,9 @@ def om_variant(name: str) -> dict:
     ``gnone`` (constant gate / additive statistics), ``nobase`` / ``silu`` (QKAN
     base activation), ``classical`` (no Bloch features), ``nomask``, ``pscalar``
     (one prior precision), ``tan`` (tangent features), ``single`` (float32),
-    ``tanh`` / ``fourier`` (classical nonlinear features instead of the Bloch features), ``lags`` (raw lag tokens), ``p<x>`` (prior_init 10^-x),
+    ``tanh`` / ``fourier`` / ``fourier1`` / ``poly2`` / ``mlp`` (classical features instead of the
+    Bloch features, same memory), ``rls`` (prior only as the initial condition), ``delta4`` (four
+    sweeps of the delta rule), ``axis`` (finite shots: query read along the programmed axis), ``lags`` (raw lag tokens), ``p<x>`` (prior_init 10^-x),
     ``noclip`` (no gradient-norm clipping; the default clips the norm at 1)."""
     parts = name.split("_")
     core = parts[1]
@@ -132,6 +134,10 @@ def om_variant(name: str) -> dict:
         "pscalar": dict(prior="scalar"), "lags": dict(context_mode="lags"), "tan": dict(tangent=True),
         "single": dict(precision="float32"),
         "tanh": dict(quantum=False, classical="tanh"), "fourier": dict(quantum=False, classical="fourier"),
+        "fourier1": dict(quantum=False, classical="fourier1"), "poly2": dict(quantum=False, classical="poly2"),
+        "mlp": dict(quantum=False, classical="mlp"),
+        "rls": dict(memory="rls"), "delta4": dict(memory="delta", delta_passes=4),
+        "axis": dict(query_readout="axis"),
     }
     for extra in parts[2:]:
         if extra in switches:

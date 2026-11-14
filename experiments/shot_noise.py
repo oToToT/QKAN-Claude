@@ -19,6 +19,12 @@ For QKAN-FWP-O the record also holds the condition number of the Gram matrix
 ``C_T`` of the read-out solve (median over the test windows) at every budget.
 
 Only physical read-outs are compared: the baselines use <Z> ("+z" variants).
+
+``--decompose`` (QKAN-FWP-O only) separates the sources of shot noise at test
+time: only the query circuits sampled, only the context circuits sampled, or
+both; the query read in the X, Y, Z bases or along the axis programmed by the
+context.  It also stores the closed-form variance of the query read-out next
+to the measured one.
 """
 
 from __future__ import annotations
@@ -99,11 +105,31 @@ def run_job(job: dict) -> dict:
             c = model.gram_matrix(te[0][:512]).double()
             cond[key_] = float(torch.linalg.cond(c).median())
     daruan.set_shots(None)
-    return dict(job, params=count_parameters(model), circuit_runs=circuit_runs(model, job["window"]), test=out, cond=cond)
+    extra = {}
+    if job.get("decompose") and isinstance(model, ObservableMemoryFWP):
+        exact = out["inf"]
+        modes = {"query_xyz": ("query", "xyz"), "query_axis": ("query", "axis"), "context": ("context", "xyz"),
+                 "all_xyz": ("all", "xyz"), "all_axis": ("all", "axis")}
+        dec, pred = {}, {}
+        xs = te[0][:1024]
+        for shots in EVAL_SHOTS[:-1]:
+            daruan.set_shots(shots)
+            torch.manual_seed(2000 + job["seed"])
+            row = {}
+            for name, (scope, readout) in modes.items():
+                model.cfg.shot_scope, model.cfg.query_readout = scope, readout
+                row[name] = float(np.mean([mse(model, *te) for _ in range(5)]))
+            dec[f"{shots:g}"] = row
+            pred[f"{shots:g}"] = {r: float(model.query_shot_variance(xs, shots, r).mean()) for r in ("xyz", "axis")}
+        model.cfg.shot_scope, model.cfg.query_readout = "all", "xyz"
+        daruan.set_shots(None)
+        extra = dict(exact=exact, decomposition=dec, query_variance_closed_form=pred)
+    return dict(job, params=count_parameters(model), circuit_runs=circuit_runs(model, job["window"]), test=out, cond=cond,
+                **extra)
 
 
 def key(job):
-    return (job["task"], job["window"], job["variant"], job["seed"], job["train_shots"])
+    return (job["task"], job["window"], job["variant"], job["seed"], job["train_shots"], bool(job.get("decompose")))
 
 
 def main():
@@ -115,10 +141,11 @@ def main():
     ap.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
     ap.add_argument("--out", required=True)
     ap.add_argument("--workers", type=int, default=os.cpu_count())
+    ap.add_argument("--decompose", action="store_true", help="also separate query and context shot noise (QKAN-FWP-O)")
     args = ap.parse_args()
     out = Path(args.out)
     done = {key(json.loads(line)) for line in out.read_text().splitlines()} if out.exists() else set()
-    jobs = [dict(task=t, window=args.window, variant=v, seed=s, train_shots=ts or None)
+    jobs = [dict(task=t, window=args.window, variant=v, seed=s, train_shots=ts or None, decompose=args.decompose)
             for t, v, ts, s in itertools.product(args.tasks, args.variants, args.train_shots, args.seeds)]
     jobs = [j for j in jobs if key(j) not in done]
     print(f"{len(jobs)} jobs to run ({len(done)} already done)", flush=True)

@@ -46,6 +46,10 @@ def set_shots(shots: float | None) -> None:
     _SHOTS = shots
 
 
+def get_shots() -> float | None:
+    return _SHOTS
+
+
 def shots_per_setting(settings: int) -> int | None:
     """Shots available to each of ``settings`` measurement settings of one circuit."""
     if _SHOTS is None:

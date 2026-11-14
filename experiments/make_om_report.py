@@ -38,7 +38,7 @@ NAMES = {
     "g_qkanfwp_tuned": "G-QKANFWP, tuned lr",
     "cmg": "CMG, lr 1e-3",
     "cmg_tuned": "CMG, tuned lr",
-    "cmg_plus@cos30": "CMG + Δ-tokens + residual",
+    "cmg_plus_tuned": "CMG + Δ-tokens + residual, tuned lr",
     OURS: "QKAN-FWP+",
     STATIC: "HQKAN-Δ",
     OM: "QKAN-FWP-O",
@@ -49,17 +49,41 @@ EXTRA_ABLATIONS = [  # size / token-length variants of the full model
     ("om_c6h6r1_p5@cos30", "fixed token length 6 instead of min(8, N/2)"),
 ]
 ABLATIONS = [
-    ("static", "no fast weights (static observable R₀)"),
-    ("delta", "sequential delta rule instead of the least-squares solve"),
-    ("gnone", "no gate (additive statistics, uniform weights)"),
     ("gconst", "constant gate (not input dependent)"),
     ("pscalar", "one prior precision instead of one per feature"),
     ("nobase", "no base-activation (linear) term: Bloch features only"),
-    ("classical", "no Bloch features: linear term only (classical control)"),
-    ("tanh", "classical tanh(w·u + b) features instead of the Bloch features, same memory"),
-    ("fourier", "classical cos(w·u + b) features instead of the Bloch features, same memory"),
     ("single", "float32 instead of float64 (features, statistics and solve)"),
 ]
+# Targets are float32 for every model and reference, so a mean squared error
+# below about 1e-15 is rounding of the targets.  Ratios and win counts clip
+# both sides at this floor.
+FLOOR = 1e-15
+
+FEATURE_CONTROLS = [  # the same memory (prior, gate, solve) on different features
+    (OM_BASE, "Bloch vectors of 6 circuits, reps = 1 (QKAN-FWP-O)"),
+    (OM_BASE + "_fourier1", "cos u, sin u of the same 6 units (same function space, no circuit)"),
+    ("om_c0h8r1_p5_fourier1", "cos u, sin u of 8 units (same number of features)"),
+    (OM_BASE + "_fourier", "cos(w·u + b), 3 per unit, w and b trainable"),
+    (OM_BASE + "_tanh", "tanh(w·u + b), 3 per unit"),
+    (OM_BASE + "_poly2", "products u_i·u_j (quadratic polynomial)"),
+    (OM_BASE + "_mlp", "8 tanh units of a second layer (small MLP)"),
+    (OM_BASE + "_classical", "linear term only"),
+]
+MEMORY_CONTROLS = [  # the same features, different memory rule or no memory
+    (OM_BASE, "gated least squares, prior in every write (QKAN-FWP-O)"),
+    (OM_BASE + "_rls", "exponentially weighted RLS (prior only as the initial condition)"),
+    (OM_BASE + "_gnone", "least squares without gate (uniform weights)"),
+    (OM_BASE + "_delta4", "normalised delta rule, 4 sweeps over the context"),
+    (OM_BASE + "_delta", "normalised delta rule, 1 sweep"),
+    ("om_c0h9r1_p5_static", "no memory, 9 circuits (same number of parameters)"),
+    (OM_BASE + "_static", "no memory, 6 circuits"),
+]
+
+
+def fl(x):
+    return max(float(x), FLOOR)
+
+
 FAMILY_TITLES = {"shm": "Damped oscillation", "tones": "Two tones", "jc": "Jaynes–Cummings",
                  "henon": "Hénon map", "duffing": "Duffing"}
 FAMILY_MODELS = [
@@ -69,8 +93,6 @@ FAMILY_MODELS = [
     ("pmx_diff8_edge_h3l2", "QKAN-FWP+"),
     ("ar_hqkan8", "HQKAN-Δ (static)"),
     ("lstm_ext8", "LSTM, same tokens (not QKAN)"),
-    (OM_BASE + "_tanh", "Same memory on classical tanh features (not QKAN)"),
-    (OM_BASE + "_fourier", "Same memory on classical cos features (not QKAN)"),
     (OM_BASE, "QKAN-FWP-O"),
 ]
 
@@ -109,19 +131,31 @@ def timeseries_part(out):
         if (v == "base@cos10" and d == "jc") or (v == "base@cos30" and d != "jc"):
             c[(d, w, "base_tuned")] = vals
     params["base_tuned"] = params["base"]
-    # CMG with the better of its two tuned learning rates per dataset (judged on
-    # the test split: this favours the baseline)
-    for d in DATASETS:
-        cand = {}
-        for tag in ("cmg@cos10", "cmg@cos30"):
-            ws = [w for w in WINDOWS if (d, w, tag) in c]
-            if len(ws) == len(WINDOWS):
-                cand[tag] = gmean([m(c, d, w, tag) for w in ws])
-        if cand:
-            best = min(cand, key=cand.get)
-            for w in WINDOWS:
-                c[(d, w, "cmg_tuned")] = c[(d, w, best)]
-            params["cmg_tuned"] = params[best]
+    # CMG with the learning rate chosen on the validation split (results/dev_cmg.jsonl),
+    # separately for the five 300-point series and for Jaynes-Cummings, like the other baselines
+    dev = cells(load([RES / "dev_cmg.jsonl"], protocol="dev"), metric="val") if (RES / "dev_cmg.jsonl").exists() else {}
+    chosen = {}
+    for base_v, alias in (("cmg", "cmg_tuned"), ("cmg_plus", "cmg_plus_tuned")):
+        for group, ds in (("small", [d for d in DATASETS if d != "jc"]), ("jc", ["jc"])):
+            score = {}
+            for (d, w, v), vals in dev.items():
+                if v.startswith(base_v + "@") and d in ds:
+                    score.setdefault(v, []).append(np.mean(list(vals.values())))
+            if not score:
+                continue
+            tag = min(score, key=lambda v: gmean(score[v]))
+            chosen[(alias, group)] = tag
+            for d in ds:
+                for w in WINDOWS:
+                    if (d, w, tag) in c:
+                        c[(d, w, alias)] = c[(d, w, tag)]
+                        params[alias] = params[tag]
+    if chosen:
+        out += ["## Learning rates of the CMG baselines chosen on validation\n",
+                "| Model | Five 300-point series | Jaynes–Cummings |", "|---|---|---|"]
+        for alias, label in (("cmg_tuned", "CMG"), ("cmg_plus_tuned", "CMG + Δ-tokens + residual")):
+            out.append(f"| {label} | {chosen.get((alias, 'small'), '–')} | {chosen.get((alias, 'jc'), '–')} |")
+        out.append("")
     ar_ref = json.loads((RES / "reference_linear_ar.json").read_text())
     lin = lambda d, w: ar_ref[f"{d}|{w}|8"]["test"]  # noqa: E731
 
@@ -134,7 +168,7 @@ def timeseries_part(out):
                 params[name] = params[v]
     cells_ = [(d, w) for d in DATASETS for w in WINDOWS if (d, w, OM) in c]
     printed = {(d, w): min(PAPER[d]["best"][i], PAPER_CMG[d][i]) for d in DATASETS for i, w in enumerate(WINDOWS)}
-    refs = [v for v in ("base", "base_tuned", "gqkan_fwp_tuned", "g_qkanfwp_tuned", "cmg", "cmg_tuned", "cmg_plus@cos30")
+    refs = [v for v in ("base", "base_tuned", "gqkan_fwp_tuned", "g_qkanfwp_tuned", "cmg", "cmg_tuned", "cmg_plus_tuned")
             if any(k[2] == v for k in c)]
     ours = [v for v in OUR_MODELS if any(k[2] == v for k in c)]
 
@@ -143,7 +177,7 @@ def timeseries_part(out):
         vals = [m(c, d, w, v) for w in WINDOWS if (d, w, v) in c]
         return gmean(vals) if len(vals) == len(WINDOWS) else float("nan")
 
-    scols = [v for v in ("base_tuned", "cmg_tuned", "cmg_plus@cos30") if v in refs] + ours
+    scols = [v for v in ("base_tuned", "cmg_tuned", "cmg_plus_tuned") if v in refs] + ours
     out += ["## Per-dataset summary (geometric mean over N ∈ {8, 16, 32, 64} of the seed-mean test MSE)\n",
             "| Dataset | Best printed in the two papers | " + " | ".join(f"{NAMES[v]} ({params[v]})" for v in scols) + " | *Linear AR(8) (9)* |",
             "|---|---|" + "---|" * (len(scols) + 1)]
@@ -158,7 +192,7 @@ def timeseries_part(out):
 
     # ---- each of this repository's models against every reference ----
     def versus(ours_v, get):
-        pairs = [(m(c, d, w, ours_v), get(d, w)) for d, w in cells_ if (d, w, ours_v) in c and get(d, w) is not None]
+        pairs = [(fl(m(c, d, w, ours_v)), fl(get(d, w))) for d, w in cells_ if (d, w, ours_v) in c and get(d, w) is not None]
         if not pairs:
             return "–"
         r = gmean([a_ / b_ for a_, b_ in pairs])
@@ -166,6 +200,7 @@ def timeseries_part(out):
         return (f"{big(1 / r)}× lower" if r < 1 else f"{big(r)}× higher") + f" ({wins}/{len(pairs)})"
 
     out += ["## Each model against every reference (geometric-mean test-MSE factor; in brackets: cells where the model is lower)\n",
+            f"Values below {FLOOR:g} (rounding of the float32 targets) are clipped at {FLOOR:g} before a factor is formed or a cell is counted.\n",
             "| Reference | Params | " + " | ".join(f"{NAMES[v]} ({params[v]})" for v in ours) + " |", "|---|---|" + "---|" * len(ours)]
     for ref in refs:
         out.append(f"| {NAMES[ref]} | {params[ref]} | "
@@ -213,10 +248,34 @@ def timeseries_part(out):
     out.append("")
     for v in ours:
         have = [(d, w) for d, w in cells_ if (d, w, v) in c]
-        out.append(f"- Linear AR(8) is lower than {NAMES[v]} in {sum(lin(d, w) < m(c, d, w, v) for d, w in have)}/{len(have)} cells.")
+        lo_ = sum(fl(lin(d, w)) < fl(m(c, d, w, v)) for d, w in have)
+        tie = sum(fl(lin(d, w)) == fl(m(c, d, w, v)) for d, w in have)
+        out.append(f"- Linear AR(8) is lower than {NAMES[v]} in {lo_}/{len(have)} cells"
+                   + (f" ({tie} more cells have both below the rounding floor of {FLOOR:g})." if tie else "."))
     out.append(f"- Linear AR(8) is lower than the best printed number of the two papers in "
                f"{sum(lin(d, w) < printed[(d, w)] for d, w in cells_)}/{len(cells_)} cells.")
     out.append("")
+
+    def control_table(title, controls):
+        rows_ = [(v + "@cos30", lab) for v, lab in controls if any(k[2] == v + "@cos30" for k in c)]
+        if len(rows_) < 2:
+            return
+        out.extend([f"## {title} on the paper benchmarks (test MSE, geometric mean over the four windows; last column: factor to the first row over the cells both have)\n",
+                    "| Variant | Params | " + " | ".join(TITLES[d] for d in DATASETS) + " | vs first row |",
+                    "|---|---|" + "---|" * (len(DATASETS) + 1)])
+        ref_v = rows_[0][0]
+        for v, lab in rows_:
+            vals = []
+            for d in DATASETS:
+                g_ = [fl(m(c, d, w, v)) for w in WINDOWS if (d, w, v) in c]
+                vals.append(f"{gmean(g_):.1e}" if len(g_) == len(WINDOWS) else "–")
+            common = [(fl(m(c, d, w, v)), fl(m(c, d, w, ref_v))) for d, w in cells_ if (d, w, v) in c and (d, w, ref_v) in c]
+            r = gmean([a_ / b_ for a_, b_ in common])
+            out.append(f"| {lab} | {params[v]} | " + " | ".join(vals) + f" | {'–' if v == ref_v else big(r) + '×'} |")
+        out.append("")
+
+    control_table("Same memory, different features", FEATURE_CONTROLS)
+    control_table("Same features, different memory rule", MEMORY_CONTROLS)
 
     # ablation on the paper benchmarks
     abl = [(f"{OM_BASE}_{tag}@cos30", label) for tag, label in ABLATIONS if any(k[2] == f"{OM_BASE}_{tag}@cos30" for k in c)]
@@ -240,7 +299,7 @@ def timeseries_part(out):
 
 def fig_timeseries(c, params, lin, path):
     series = [("base_tuned", BLUE, "GQKAN-QKANFWP, tuned lr", "o"),
-              ("cmg_plus@cos30", GREEN, "CMG + Δ-tokens + residual", "v"),
+              ("cmg_plus_tuned", GREEN, "CMG + Δ-tokens + residual", "v"),
               (OURS, ORANGE, f"QKAN-FWP+ ({params[OURS]} params)", "D"),
               (STATIC, MAGENTA, f"HQKAN-Δ ({params[STATIC]} params)", "P"),
               (OM, VIOLET, f"QKAN-FWP-O ({params[OM]} params)", "*")]
@@ -302,10 +361,13 @@ def family_part(out):
             "Mean ± std over 3 seeds at the learning rate chosen on validation (one of 3e-3, 1e-2, 3e-2, cosine); "
             "each model is evaluated at its best-validation epoch. References are closed-form.\n",
             "| Model | Params | " + head + " |", "|---|---|" + "---|" * len(cells_)]
-    for name, label in (("persist", "*Reference: repeat the last value*"),
-                        ("lin_global", "*Reference: one linear AR(p) for all sequences*"),
-                        ("lin_ctx", "*Reference: ridge AR(q) fitted inside each window*")):
-        out.append(f"| {label} | – | " + " | ".join(f"*{refs[c_][name]['test']:.2e}*" for c_ in cells_) + " |")
+    ref_rows = (("persist", "*Reference: repeat the last value*"),
+                ("lin_global", "*Reference: one linear AR(p) for all sequences*"),
+                ("lin_ctx", "*Reference: ridge AR(q) fitted inside each window*"),
+                ("poly_ctx", "*Reference: ridge on quadratic features of two lags, fitted inside each window*"))
+    for name, label in ref_rows:
+        if all(name in refs[c_] for c_ in cells_):
+            out.append(f"| {label} | – | " + " | ".join(f"*{refs[c_][name]['test']:.2e}*" for c_ in cells_) + " |")
     models = [(v, lab) for v, lab in FAMILY_MODELS if any(k[1] == v for k in sel)]
     best = {c_: min((sel[(c_, v)][1].mean(), v) for v, _ in models if (c_, v) in sel)[1] for c_ in cells_}
     for v, lab in models:
@@ -324,7 +386,7 @@ def family_part(out):
             "| Compared with | Params | Geo-mean test MSE of QKAN-FWP-O | Cells where it is lower | Smallest … largest factor |", "|---|---|---|---|---|"]
 
     def versus(get, label, par):
-        rat = [sel[(c_, OM_BASE)][1].mean() / get(c_) for c_ in cells_ if get(c_) is not None]
+        rat = [fl(sel[(c_, OM_BASE)][1].mean()) / fl(get(c_)) for c_ in cells_ if get(c_) is not None]
         if not rat:
             return
         r = gmean(rat)
@@ -339,14 +401,38 @@ def family_part(out):
             versus(lambda c_, v=v: sel[(c_, v)][1].mean() if (c_, v) in sel else None, lab, params[v])
     versus(lambda c_: refs[c_]["lin_global"]["test"], "*one linear AR(p) for all sequences*", "–")
     versus(lambda c_: refs[c_]["lin_ctx"]["test"], "*ridge AR(q) fitted inside each window*", "–")
+    if all("poly_ctx" in refs[c_] for c_ in cells_):
+        versus(lambda c_: refs[c_]["poly_ctx"]["test"], "*ridge on quadratic features fitted inside each window*", "–")
     out.append("")
+
+    def control_table(title, controls):
+        rows_ = [(v, lab) for v, lab in controls if any(k[1] == v for k in sel)]
+        if len(rows_) < 2:
+            return
+        out.extend([f"## {title} on the families (test MSE, mean over 3 seeds; last column: geometric-mean factor to the first row)\n",
+                    "| Variant | Params | " + head + " | vs first row |", "|---|---|" + "---|" * (len(cells_) + 1)])
+        ref_v = rows_[0][0]
+        for name, label in ref_rows[1:]:
+            if all(name in refs[c_] for c_ in cells_):
+                out.append(f"| {label} | – | " + " | ".join(f"*{refs[c_][name]['test']:.1e}*" for c_ in cells_) + " | |")
+        for v, lab in rows_:
+            vals = {c_: sel[(c_, v)][1].mean() for c_ in cells_ if (c_, v) in sel}
+            best_ = {c_: min(sel[(c_, vv)][1].mean() for vv, _ in rows_ if (c_, vv) in sel) for c_ in cells_}
+            common = [fl(vals[c_]) / fl(sel[(c_, ref_v)][1].mean()) for c_ in cells_ if c_ in vals and (c_, ref_v) in sel]
+            out.append(f"| {lab} | {params[v]} | "
+                       + " | ".join(("–" if c_ not in vals else f"**{vals[c_]:.1e}**" if vals[c_] == best_[c_] else f"{vals[c_]:.1e}") for c_ in cells_)
+                       + f" | {'–' if v == ref_v else big(gmean(common)) + '×'} |")
+        out.append("")
+
+    control_table("Same memory, different features", FEATURE_CONTROLS)
+    control_table("Same features, different memory rule", MEMORY_CONTROLS)
 
     abl = [(f"{OM_BASE}_{tag}", label) for tag, label in ABLATIONS if any(k[1] == f"{OM_BASE}_{tag}" for k in sel)]
     if abl:
         out += ["## QKAN-FWP-O ablation on the families (test MSE ÷ full model)\n",
                 "| Variant | Params | Geo-mean, all cells | " + head + " |", "|---|---|---|" + "---|" * len(cells_)]
         for v, label in abl:
-            rat = {c_: sel[(c_, v)][1].mean() / sel[(c_, OM_BASE)][1].mean() for c_ in cells_ if (c_, v) in sel}
+            rat = {c_: fl(sel[(c_, v)][1].mean()) / fl(sel[(c_, OM_BASE)][1].mean()) for c_ in cells_ if (c_, v) in sel}
             out.append(f"| {label} | {params[v]} | **{big(gmean(list(rat.values())))}×** | "
                        + " | ".join(f"{big(rat[c_])}×" if c_ in rat else "–" for c_ in cells_) + " |")
         out.append("")
@@ -415,6 +501,7 @@ def fig_family(sel, refs, params, cells_, models, path):
 
 # ---------------------------------------------------------------------------
 SHOT_MODELS = [(OM, "QKAN-FWP-O", VIOLET, "*"),
+               (OM_BASE + "_axis@cos30", "QKAN-FWP-O, query read along the programmed axis", VIOLET, None),
                (OM_BASE + "_single@cos30", "QKAN-FWP-O, float32", VIOLET, None),
                ("ar_hqkan8+z@cos30", "HQKAN-Δ, ⟨Z⟩ read-out", MAGENTA, "P"),
                ("pmx_diff8_edge_h3l2+z@cos30", "QKAN-FWP+, ⟨Z⟩ read-out", ORANGE, "D")]
@@ -486,6 +573,21 @@ def shots_part(out):
     plt.close(fig)
 
 
+def resources_part(out):
+    path = RES / "resources.json"
+    if not path.exists():
+        return
+    rows = json.loads(path.read_text())
+    out += ["## Resources per prediction\n",
+            "| Task | Model | Trainable parameters | Circuits | Circuit runs | Measurement settings per run | Runs × settings "
+            "| Gate angles reloaded per prediction | Fast state kept in classical memory (numbers) | Classical multiply-adds for the memory |",
+            "|---|---|---|---|---|---|---|---|---|---|"]
+    for r in rows:
+        out.append(f"| {r['task']} | {r['model']} | {r['params']:,} | {r['circuits']} | {r['circuit_runs']:,} | {r['settings']} "
+                   f"| {r['settings_total']:,} | {r['reprogrammed']} | {r['fast_state']} | {r['classical_flops']:,} |")
+    out.append("")
+
+
 def cost_part(out):
     path = RES / "cost.json"
     if not path.exists():
@@ -511,39 +613,51 @@ SOLAR_MODELS = [("base", "GQKAN-QKANFWP (re-implemented baseline)"),
 def solar_part(out):
     from experiments.make_figures import PAPER_SOLAR, solar_eval_anchor
 
-    rows = defaultdict(list)
-    for f in sorted(RES.glob("final_solar*.jsonl")):
-        for line in f.read_text().splitlines():
-            r = json.loads(line)
-            base, _, tag = r["variant"].partition("@")
-            lr = {"lr1": 1e-3, "lr2": 2e-3}.get(tag, r["lr"])
-            rows[(tuple(r.get("split") or (0.8, 0.1, 0.1)), base, lr)].append(r)
-    if not any(k[1] == "om" for k in rows):
-        return
-    out += ["## Solar cycle: all models (528 → 132 months, paper protocol: peak-aware loss, best-validation checkpoint)\n",
-            "For every model the learning rate is the one with the lowest validation loss among those run "
-            "(the paper's grid); test metrics are mean ± std over seeds.\n"]
-    for split, title in SOLAR_SPLITS.items():
-        if not any(k[0] == split and k[1] == "om" for k in rows):
-            continue
-        anchor = solar_eval_anchor(split)["test"]
-        out += [f"### {title}\n",
-                "| Model | Params | lr (by validation) | Seeds | Val. loss | Scaled MSE ↓ | PAE ↓ | PTE ↓ |", "|---|---|---|---|---|---|---|---|"]
-        for v, label in SOLAR_MODELS:
-            cand = {lr: rs for (sp, vv, lr), rs in rows.items() if sp == split and vv == v}
-            if not cand:
+    def load_rows(files, purged):
+        rows = defaultdict(list)
+        for f in files:
+            for line in f.read_text().splitlines():
+                r = json.loads(line)
+                if bool(r.get("purge")) != purged:
+                    continue
+                base, _, tag = r["variant"].partition("@")
+                lr = {"lr1": 1e-3, "lr2": 2e-3}.get(tag, r["lr"])
+                rows[(tuple(r.get("split") or (0.8, 0.1, 0.1)), base, lr)].append(r)
+        return rows
+
+    def tables(rows, heading, note, with_printed):
+        if not any(k[1] == "om" for k in rows):
+            return
+        out.extend([f"## {heading}\n", note + "\n"])
+        for split, title in SOLAR_SPLITS.items():
+            if not any(k[0] == split and k[1] == "om" for k in rows):
                 continue
-            lr = min(cand, key=lambda k: np.mean([r["val"]["loss"] for r in cand[k]]))
-            rs = cand[lr]
-            f = lambda k, p: "{:.{p}f} ± {:.{p}f}".format(np.mean([r["test"][k] for r in rs]), np.std([r["test"][k] for r in rs]), p=p)  # noqa: E731
-            vl = np.mean([r["val"]["loss"] for r in rs])
-            out.append(f"| {label} | {rs[0]['params']:,} | {lr:g} | {len(rs)} | {vl:.2f} | {f('mse', 4)} | {f('pae', 1)} | {f('pte', 1)} |")
-        out.append(f"| *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | – | – | {anchor['mse']:.4f} | {anchor['pae']:.1f} | {anchor['pte']:.1f} |")
-        if split == (0.8, 0.1, 0.1):
-            ps = PAPER_SOLAR
-            out.append(f"| *Printed in arXiv:2605.06734 for GQKAN-QKANFWP* | {ps['params']:,} | – | 5 | – | {ps['mse'][0]:.4f} ± {ps['mse'][1]:.4f} "
-                       f"| {ps['pae'][0]:.2f} ± {ps['pae'][1]:.2f} | {ps['pte'][0]:.2f} ± {ps['pte'][1]:.2f} |")
-        out.append("")
+            anchor = solar_eval_anchor(split)["test"]
+            out.extend([f"### {title}\n",
+                        "| Model | Params | lr (by validation) | Seeds | Val. loss | Scaled MSE ↓ | PAE ↓ | PTE ↓ |", "|---|---|---|---|---|---|---|---|"])
+            for v, label in SOLAR_MODELS:
+                cand = {lr: rs for (sp, vv, lr), rs in rows.items() if sp == split and vv == v}
+                if not cand:
+                    continue
+                lr = min(cand, key=lambda k: np.mean([r["val"]["loss"] for r in cand[k]]))
+                rs = cand[lr]
+                f = lambda k, p_: "{:.{p}f} ± {:.{p}f}".format(np.mean([r["test"][k] for r in rs]), np.std([r["test"][k] for r in rs]), p=p_)  # noqa: E731
+                vl = np.mean([r["val"]["loss"] for r in rs])
+                out.append(f"| {label} | {rs[0]['params']:,} | {lr:g} | {len(rs)} | {vl:.2f} | {f('mse', 4)} | {f('pae', 1)} | {f('pte', 1)} |")
+            out.append(f"| *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | – | – | {anchor['mse']:.4f} | {anchor['pae']:.1f} | {anchor['pte']:.1f} |")
+            if with_printed and split == (0.8, 0.1, 0.1):
+                ps = PAPER_SOLAR
+                out.append(f"| *Printed in arXiv:2605.06734 for GQKAN-QKANFWP* | {ps['params']:,} | – | 5 | – | {ps['mse'][0]:.4f} ± {ps['mse'][1]:.4f} "
+                           f"| {ps['pae'][0]:.2f} ± {ps['pae'][1]:.2f} | {ps['pte'][0]:.2f} ± {ps['pte'][1]:.2f} |")
+            out.append("")
+
+    note = ("For every model the learning rate is the one with the lowest validation loss among those run "
+            "(the paper's grid); test metrics are mean ± std over seeds.")
+    tables(load_rows([f for f in (RES / "solar_purged.jsonl",) if f.exists()], True),
+           "Solar cycle, splits by target time (528 → 132 months; the last 131 windows of train and validation are removed)",
+           note + " The test windows are the same as in the window-index split.", False)
+    tables(load_rows(sorted(RES.glob("final_solar*.jsonl")), False),
+           "Solar cycle, window-index split of the paper (targets of neighbouring splits overlap by 131 months)", note, True)
 
 
 def memory_part(out):
@@ -590,6 +704,7 @@ def main():
     out = []
     timeseries_part(out)
     memory_part(out)
+    resources_part(out)
     cost_part(out)
     family_part(out)
     shots_part(out)

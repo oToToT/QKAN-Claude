@@ -60,6 +60,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from . import daruan
 from .daruan import daruan_bloch
 from .models import Tokenizer
 
@@ -76,10 +77,17 @@ class ObsMemConfig:
     # phi(u) = a * base(u) + r . n(u).  'none' | 'identity' | 'silu'
     base: str = "identity"
     quantum: bool = True  # False: drop the Bloch features (classical control, needs base != 'none')
-    # Classical replacement of the Bloch features when ``quantum`` is False: three
-    # trainable features per hidden unit, tanh(w u + b) or cos(w u + b), read by
-    # exactly the same memory.  'none' keeps only the base (linear) term.
-    classical: str = "none"  # 'none' | 'tanh' | 'fourier'
+    # Classical replacement of the Bloch features when ``quantum`` is False, read
+    # by exactly the same memory (same prior, gate and solve):
+    #   'none'     only the base (linear) term
+    #   'fourier1' cos(u), sin(u) per hidden unit: the function space of a
+    #              reps = 1 circuit, whose Bloch components are a + b cos u + c sin u
+    #   'fourier'  three features cos(w u + b) per unit, w and b trainable
+    #   'tanh'     three features tanh(w u + b) per unit, w and b trainable
+    #   'poly2'    all products u_i u_j (i <= j) of the hidden units
+    #   'mlp'      ``mlp_units`` features tanh(W u + c): a two-layer network
+    classical: str = "none"
+    mlp_units: int = 8
     precision: str = "float64"  # 'float32': features, statistics and the solve in single precision
     # Tangent features u * d n / d u (reps = 1 only): the first-order effect of
     # changing the frequency w of the data-encoding gate RZ(w u) around w = 1, so
@@ -88,9 +96,21 @@ class ObsMemConfig:
     # [n(u + pi/2) - n(u - pi/2)] / 2 of the same circuit.
     tangent: bool = False
     # 'ls'   : gated least squares (closed form, see module docstring)
-    # 'delta': sequential normalised delta rule (no matrix solve)
+    # 'rls'  : the same statistics with the prior only in the initial condition
+    #          (C_0 = Lambda_0, then C_t = g C_{t-1} + (1 - g) k k^T): exponentially
+    #          weighted recursive least squares, whose inverse can be updated in
+    #          O(F^2) per step by Sherman-Morrison; the prior decays with the gates
+    # 'delta': normalised delta rule (no matrix), ``delta_passes`` sweeps over the context
     # 'none' : static observable R_0 (no fast weights)
     memory: str = "ls"
+    delta_passes: int = 1
+    # Finite shots only: how the query circuit is read.  'xyz' estimates <X>, <Y>,
+    # <Z> with a third of the budget each; 'axis' measures the single observable
+    # R_T . sigma that the context has just programmed (one basis, all shots).
+    query_readout: str = "xyz"
+    # Finite shots only (diagnostics): which circuit runs are sampled.  'all' |
+    # 'query' (context features exact) | 'context' (query features exact)
+    shot_scope: str = "all"
     # 'feature': g_t read from the same circuits (one more observable)
     # 'const'  : one learned scalar g
     # 'none'   : additive statistics (ungated rule, plain Bayesian linear regression)
@@ -174,13 +194,23 @@ class ObservableMemoryFWP(nn.Module):
             nonlinear = True
             self.cl_w = nn.Parameter(torch.empty(h, 3).normal_(1.0, 0.5))
             self.cl_b = nn.Parameter(torch.empty(h, 3).uniform_(-math.pi, math.pi))
-        elif cfg.classical != "none":
+        elif cfg.classical == "mlp":
+            self.mlp = nn.Linear(h, cfg.mlp_units)
+        elif cfg.classical not in ("none", "fourier1", "poly2"):
             raise ValueError(cfg.classical)
-        elif cfg.base == "none":
+        elif cfg.classical == "none" and cfg.base == "none":
             raise ValueError("a model without nonlinear features needs a base activation")
         if cfg.tangent and not (cfg.quantum and cfg.reps == 1):
             raise ValueError("tangent features need Bloch features and reps == 1")
-        self.n_feat = 1 + (h if cfg.base != "none" else 0) + (3 * h if nonlinear else 0) + (3 * h if cfg.tangent else 0)
+        n_nonlinear = {"none": 0, "tanh": 3 * h, "fourier": 3 * h, "fourier1": 2 * h, "poly2": h * (h + 1) // 2,
+                       "mlp": cfg.mlp_units}[cfg.classical]
+        if cfg.quantum:
+            n_nonlinear = 3 * h
+        if cfg.classical == "poly2":
+            iu = torch.triu_indices(h, h)
+            self.register_buffer("poly_i", iu[0], persistent=False)
+            self.register_buffer("poly_j", iu[1], persistent=False)
+        self.n_feat = 1 + (h if cfg.base != "none" else 0) + n_nonlinear + (3 * h if cfg.tangent else 0)
         f = self.n_feat
         self.n_out = cfg.out_basis or cfg.d_out  # regression outputs per pair
         # prior / static observable: one coefficient per feature (and per output)
@@ -239,6 +269,12 @@ class ObservableMemoryFWP(nn.Module):
             parts.append(torch.tanh(u[..., None] * self.cl_w + self.cl_b).flatten(-2))
         elif cfg.classical == "fourier":
             parts.append(torch.cos(u[..., None] * self.cl_w + self.cl_b).flatten(-2))
+        elif cfg.classical == "fourier1":
+            parts += [torch.cos(u), torch.sin(u)]
+        elif cfg.classical == "poly2":
+            parts.append(u[..., self.poly_i] * u[..., self.poly_j])
+        elif cfg.classical == "mlp":
+            parts.append(torch.tanh(self.mlp(u)))
         if cfg.tangent:
             shift = 0.5 * math.pi
             dn = 0.5 * (daruan_bloch(u + shift, self.theta, circuit_copies=copies)
@@ -341,9 +377,15 @@ class ObservableMemoryFWP(nn.Module):
             return r0
         lam = self._prior_precision()
         err0 = y_ctx - k_ctx @ self.r0  # prediction errors of the prior observable
-        if cfg.memory == "ls":
+        if cfg.memory in ("ls", "rls"):
             beta = self.memory_weights(k_ctx, valid)
-            c = torch.einsum("bt,btf,btg->bfg", beta, k_ctx, k_ctx) + torch.diag_embed(lam)
+            if cfg.memory == "rls" and cfg.gate != "none":
+                # the prior is only the initial condition, so it keeps the weight beta_0 = prod_t g_t
+                beta0 = torch.exp(self._log_gates(k_ctx, valid)[0].sum(1))
+                prior = beta0[:, None] * lam + 1e-12
+            else:
+                prior = lam.expand(b, -1)
+            c = torch.einsum("bt,btf,btg->bfg", beta, k_ctx, k_ctx) + torch.diag_embed(prior)
             if err0.dim() == 2:
                 rhs = torch.einsum("bt,btf,bt->bf", beta, k_ctx, err0)
                 return r0 + torch.linalg.solve(c, rhs[..., None])[..., 0]
@@ -358,16 +400,35 @@ class ObservableMemoryFWP(nn.Module):
                 eta = torch.exp(self._log_gates(k_ctx, valid)[1])
             p = 1.0 / lam
             r = r0
-            for t in range(k_ctx.shape[1]):
-                kt = k_ctx[:, t]
-                pk = p * kt
-                e = y_ctx[:, t] - (kt * r).sum(-1)
-                r = r + (eta[:, t] * e / (kt * pk).sum(-1))[:, None] * pk
+            for _ in range(cfg.delta_passes):
+                for t in range(k_ctx.shape[1]):
+                    kt = k_ctx[:, t]
+                    pk = p * kt
+                    e = y_ctx[:, t] - (kt * r).sum(-1)
+                    r = r + (eta[:, t] * e / (kt * pk).sum(-1))[:, None] * pk
             return r
         raise ValueError(cfg.memory)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        s, k, y_ctx, valid = self.context_pairs(x)
+        shots = daruan.get_shots()
+        scope = self.cfg.shot_scope if (shots is not None and self.cfg.d_out == 1) else "all"
+        if scope == "all":
+            s, k, y_ctx, valid = self.context_pairs(x)
+        else:
+            # sample only part of the circuit runs: the query token is the last one
+            daruan.set_shots(None)
+            try:
+                s, k, y_ctx, valid = self.context_pairs(x)  # exact everywhere
+                if scope == "context":
+                    daruan.set_shots(shots)
+                    k = torch.cat([self.context_pairs(x)[1][:, :-1], k[:, -1:]], 1)
+                elif scope == "query":
+                    daruan.set_shots(shots)
+                    k = torch.cat([k[:, :-1], self.features(self.tokenizer(x)[:, -1:].to(self.dtype))], 1)
+                else:
+                    raise ValueError(scope)
+            finally:
+                daruan.set_shots(shots)
         if self.cfg.d_out > 1:
             r = self.fast_observable(k[:, : y_ctx.shape[1]], y_ctx, valid)  # (B, F, K)
             out = torch.einsum("bf,bfk->bk", k[:, -1], r) * self.y_scale
@@ -376,10 +437,65 @@ class ObservableMemoryFWP(nn.Module):
             last = torch.tensor([s.shape[1] - 1], device=x.device)
             return out + self._anchor(s, last)[:, 0].to(self.dtype)
         r = self.fast_observable(k[:, :-1], y_ctx, valid)
-        y = (k[:, -1] * r).sum(-1) * self.y_scale
+        if (shots is not None and scope != "context" and self.cfg.query_readout == "axis" and self.cfg.quantum
+                and not self.cfg.tangent):
+            y = self._read_query_along_axis(x, r, shots) * self.y_scale
+        else:
+            y = (k[:, -1] * r).sum(-1) * self.y_scale
         if self.cfg.skip == "last":
             y = y + s[:, -1].to(self.dtype)
         return y[:, None]
+
+    def _read_query_along_axis(self, x: torch.Tensor, r: torch.Tensor, shots: float) -> torch.Tensor:
+        """Finite-shot read-out of the query with the measurement basis programmed
+        by the context.  For circuit i the fast observable is ``R_i . sigma`` with
+        ``R_i`` the three Bloch coefficients of ``R_T``; rotating the measurement
+        axis to ``R_i / |R_i|`` estimates ``R_i . n_i`` from one setting with all
+        ``shots`` (instead of three settings with a third each).  The classical
+        terms (constant and base activation) carry no shot noise."""
+        cfg, h = self.cfg, self.cfg.hidden
+        daruan.set_shots(None)
+        try:
+            k_q = self.features(self.tokenizer(x)[:, -1].to(self.dtype))  # exact expectations of the query
+        finally:
+            daruan.set_shots(shots)
+        n_cl = self.n_feat - 3 * h
+        classical = (k_q[:, :n_cl] * r[:, :n_cl]).sum(-1)
+        rv = r[:, n_cl:].reshape(-1, h, 3)
+        nv = k_q[:, n_cl:].reshape(-1, h, 3)
+        amp = rv.norm(dim=-1).clamp_min(1e-30)
+        cos = ((rv * nv).sum(-1) / amp).clamp(-1.0, 1.0)  # expectation of the unit observable
+        n = max(int(shots), 1)
+        counts = torch.binomial(torch.full_like(cos, float(n)), ((1.0 + cos.detach()) * 0.5).clamp(0.0, 1.0))
+        est = cos + (2.0 * counts / n - 1.0 - cos.detach())
+        return classical + (amp * est).sum(-1)
+
+    @torch.no_grad()
+    def query_shot_variance(self, x: torch.Tensor, shots: float, readout: str = "axis") -> torch.Tensor:
+        """Closed-form variance of the prediction caused by the finite shots of
+        the *query* circuits alone (exact context), in units of the target:
+        ``y_scale^2 * sum_i |R_i|^2 (1 - cos_i^2) / S`` when each circuit is read
+        along its programmed axis, and ``y_scale^2 * sum_i sum_a R_ia^2 (1 - n_ia^2) / floor(S/3)``
+        for the X/Y/Z read-out.  The fast observable ``R_T`` is known before the
+        query is measured, so this number is available in advance."""
+        h = self.cfg.hidden
+        old = daruan.get_shots()
+        daruan.set_shots(None)
+        try:
+            _, k, y_ctx, valid = self.context_pairs(x)
+        finally:
+            daruan.set_shots(old)
+        r = self.fast_observable(k[:, :-1], y_ctx, valid)
+        n_cl = self.n_feat - 3 * h
+        rv = r[:, n_cl:].reshape(-1, h, 3)
+        nv = k[:, -1, n_cl:].reshape(-1, h, 3)
+        if readout == "axis":
+            amp2 = (rv**2).sum(-1)
+            cos2 = (rv * nv).sum(-1) ** 2 / amp2.clamp_min(1e-300)
+            var = (amp2 * (1.0 - cos2)).sum(-1) / max(int(shots), 1)
+        else:
+            var = (rv**2 * (1.0 - nv**2)).sum((-1, -2)) / max(int(shots // 3), 1)
+        return var * self.y_scale**2
 
     @torch.no_grad()
     def gram_matrix(self, x: torch.Tensor) -> torch.Tensor:

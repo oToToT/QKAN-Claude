@@ -344,3 +344,140 @@ def test_gram_matrix_is_bounded_below_by_the_prior():
     assert torch.allclose(c, m.statistics_recursion(x)[0], atol=1e-10)
     lam = m._prior_precision()
     assert torch.linalg.eigvalsh(c).min() >= lam.min() - 1e-12
+
+
+# ---------------------------------------------------------------------------
+# feature controls, memory-rule variants, programmed measurement axis
+# ---------------------------------------------------------------------------
+def test_reps1_bloch_features_are_first_harmonic_fourier_features():
+    """Every Bloch component of a reps = 1 circuit is a + b cos u + c sin u."""
+    torch.manual_seed(0)
+    u = torch.linspace(-5, 5, 300, dtype=torch.float64)[:, None]
+    theta = torch.randn(1, 1, 2, 2, dtype=torch.float64)
+    n = daruan_bloch(u, theta)[:, 0, 0]
+    basis = torch.cat([torch.ones_like(u), torch.cos(u), torch.sin(u)], 1)
+    residual = n - basis @ torch.linalg.lstsq(basis, n).solution
+    assert residual.abs().max() < 1e-12
+    # with two re-uploads the second harmonic appears
+    n2 = daruan_bloch(u, torch.randn(1, 1, 3, 2, dtype=torch.float64))[:, 0, 0]
+    assert (n2 - basis @ torch.linalg.lstsq(basis, n2).solution).abs().max() > 1e-3
+
+
+@pytest.mark.parametrize("kind, n_feat", [("fourier1", 1 + 6 + 12), ("poly2", 1 + 6 + 21), ("mlp", 1 + 6 + 8)])
+def test_more_classical_feature_controls(kind, n_feat):
+    torch.manual_seed(0)
+    m = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, quantum=False, classical=kind))
+    assert m.n_feat == n_feat
+    _randomise(m)
+    x = _series()
+    _, k, y_ctx, valid = m.context_pairs(x)
+    c, b = m.statistics_recursion(x)
+    assert torch.allclose(m.fast_observable(k[:, :-1], y_ctx, valid), torch.linalg.solve(c, b), atol=1e-8)
+
+
+def test_quadratic_features_identify_a_henon_map_in_context():
+    """x' = 1 - a x^2 + b x_prev with a different (a, b) per sequence: exact
+    for products of two lags, impossible for a static predictor."""
+    torch.manual_seed(0)
+    a = torch.tensor([1.05, 1.2, 1.35], dtype=torch.float64)
+    b = torch.tensor([0.12, 0.2, 0.28], dtype=torch.float64)
+    xs = [torch.full((3,), 0.1, dtype=torch.float64), torch.full((3,), 0.2, dtype=torch.float64)]
+    for _ in range(40):
+        xs.append(1.0 - a * xs[-1] ** 2 + b * xs[-2])
+    x = torch.stack(xs[20:], 1)[..., None]
+    m = ObservableMemoryFWP(ObsMemConfig(context=2, context_mode="lags", hidden=2, quantum=False, classical="poly2",
+                                         gate="none", prior_init=1e-12, skip="none"))
+    m.fit_token_scale(x[:, :-1])
+    err = (m(x[:, :-1])[:, 0] - x[:, -1, 0]).abs().max()
+    assert err < 1e-5
+
+
+def test_rls_keeps_the_prior_only_as_initial_condition():
+    torch.manual_seed(0)
+    m = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, memory="rls"))
+    _randomise(m)
+    x = _series()
+    _, k, y_ctx, valid = m.context_pairs(x)
+    k_ctx = k[:, :-1]
+    lam = m._prior_precision()
+    log_g, log_w = m._log_gates(k_ctx, valid)
+    c = torch.diag_embed(lam.expand(len(x), -1)).clone()
+    b = (lam * m.r0).expand(len(x), -1).clone()
+    for t in range(k_ctx.shape[1]):  # C_t = g C_{t-1} + (1 - g) k k^T, b_t likewise
+        g, w = torch.exp(log_g[:, t]), torch.exp(log_w[:, t])
+        kt = k_ctx[:, t]
+        c = g[:, None, None] * c + w[:, None, None] * kt[:, :, None] * kt[:, None, :]
+        b = g[:, None] * b + (w * y_ctx[:, t])[:, None] * kt
+    assert torch.allclose(m.fast_observable(k_ctx, y_ctx, valid), torch.linalg.solve(c, b), atol=1e-6)
+
+
+def test_more_delta_sweeps_fit_the_context_better():
+    torch.manual_seed(0)
+    x = _series(t=32)
+    one = ObservableMemoryFWP(ObsMemConfig(gate="none", memory="delta"))
+    _randomise(one)
+    four = ObservableMemoryFWP(ObsMemConfig(gate="none", memory="delta", delta_passes=4))
+    four.load_state_dict(one.state_dict())
+    _, k, y_ctx, valid = one.context_pairs(x)
+    k_ctx = k[:, :-1]
+
+    def sse(r):
+        return (((k_ctx * r[:, None]).sum(-1) - y_ctx) ** 2 * valid).sum()
+
+    assert sse(four.fast_observable(k_ctx, y_ctx, valid)) < sse(one.fast_observable(k_ctx, y_ctx, valid))
+
+
+def test_query_read_along_the_programmed_axis():
+    """One measurement setting along R_T: unbiased, and less shot noise than
+    splitting the same budget over X, Y and Z."""
+    torch.manual_seed(0)
+    x = _series(b=16)
+    xyz = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, memory="none"))  # static: all shot noise comes from the query
+    _randomise(xyz)
+    axis = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, memory="none", query_readout="axis"))
+    axis.load_state_dict(xyz.state_dict())
+    with torch.no_grad():
+        exact = xyz(x)
+        assert torch.equal(axis(x), exact)  # identical without shots
+        try:
+            daruan.set_shots(300)
+            a = torch.stack([xyz(x) for _ in range(400)])
+            b = torch.stack([axis(x) for _ in range(400)])
+        finally:
+            daruan.set_shots(None)
+    assert (b.mean(0) - exact).abs().max() < 5 * b.std(0).max() / 20  # unbiased within sampling error
+    assert b.var(0).mean() < 0.6 * a.var(0).mean()
+
+
+@pytest.mark.parametrize("readout", ["xyz", "axis"])
+def test_closed_form_shot_variance_of_the_query_readout(readout):
+    """With exact context features the only randomness is the query read-out,
+    whose variance is known in closed form before the query is measured."""
+    torch.manual_seed(0)
+    x = _series(b=12)
+    m = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, prior_init=1e-1, shot_scope="query", query_readout=readout))
+    _randomise(m)
+    with torch.no_grad():
+        predicted = m.query_shot_variance(x, 600, readout)
+        try:
+            daruan.set_shots(600)
+            samples = torch.stack([m(x)[:, 0] for _ in range(600)])
+        finally:
+            daruan.set_shots(None)
+    assert torch.allclose(samples.var(0), predicted, rtol=0.35)
+    assert abs(samples.var(0).mean() / predicted.mean() - 1.0) < 0.1
+
+
+def test_shot_scope_context_leaves_the_query_exact():
+    torch.manual_seed(0)
+    x = _series(b=4)
+    m = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, memory="none", shot_scope="context"))
+    _randomise(m)
+    with torch.no_grad():
+        exact = m(x)
+        try:
+            daruan.set_shots(50)
+            noisy = m(x)  # a static model has no context: nothing is sampled
+        finally:
+            daruan.set_shots(None)
+    assert torch.equal(noisy, exact)

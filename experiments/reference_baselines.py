@@ -6,6 +6,10 @@ protocol: [-1, 1] min-max scaling, chronological 80/20 split) and scored on the
 same test windows.  It has p + 1 parameters and needs no training loop, so it
 shows how much of each benchmark is a (near-)exact linear recurrence.
 
+The targets are rounded to float32, as for every neural model (inputs stay in
+float64): an error below about 1e-15 is then rounding of the targets, not
+model quality, for the references and the networks alike.
+
 Writes results/reference_linear_ar.json and prints a markdown table.
 """
 
@@ -29,7 +33,7 @@ ORDERS = [3, 8]
 def linear_ar(name: str, window: int, order: int) -> dict:
     series = data.load_series(name, dtype=np.float64)
     x, y = data.make_windows(series, window)
-    x, y = x[..., 0], y[:, 0]
+    x, y = x[..., 0], y[:, 0].astype(np.float32).astype(np.float64)  # the targets the networks are trained and scored on
     tr, te = data.chrono_split(len(x), (0.8, 0.2))
     design = np.c_[x[:, -order:], np.ones(len(x))]
     w = np.linalg.lstsq(design[tr], y[tr], rcond=None)[0]

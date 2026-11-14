@@ -7,6 +7,15 @@ peak-aware loss  L = (1/B) sum (y - yhat)^2 (1 + alpha y), alpha = 1;
 batch 32, 100 epochs, Adam; the checkpoint with the lowest validation loss is
 evaluated on the test split.  Metrics: scaled MSE, peak amplitude error (PAE,
 in sunspot-number units) and peak timing error (PTE, months).
+
+Splitting the *windows* by index lets the 132-month targets of neighbouring
+splits overlap by 131 months: the last validation targets lie after the first
+test forecast origin, so choosing the checkpoint on validation looks ahead,
+and the last training targets lie inside the validation period.  ``--purge``
+removes the last 131 windows of the training and of the validation split, so
+that every target of a split precedes the first forecast origin of the next
+one (a split by target time).  Without the flag the split is the window-index
+split described in the paper.
 """
 
 from __future__ import annotations
@@ -149,6 +158,8 @@ def run_job(job: dict) -> dict:
     x, y = data.make_windows(scaled, WINDOW, HORIZON)
     x, y = torch.tensor(x), torch.tensor(y)
     tr, va, te = data.chrono_split(len(x), tuple(job.get("split") or (0.8, 0.1, 0.1)))
+    if job.get("purge"):
+        tr, va = tr[: -(HORIZON - 1)], va[: -(HORIZON - 1)]
 
     torch.manual_seed(job["seed"])
     np.random.seed(job["seed"])
@@ -230,7 +241,8 @@ def run_job(job: dict) -> dict:
 
 
 def key(job):
-    return (job["variant"], job["seed"], job["lr"], job["epochs"], tuple(job.get("split") or (0.8, 0.1, 0.1)))
+    return (job["variant"], job["seed"], job["lr"], job["epochs"], tuple(job.get("split") or (0.8, 0.1, 0.1)),
+            bool(job.get("purge")))
 
 
 def main():
@@ -245,6 +257,8 @@ def main():
     ap.add_argument("--save-dir", default=None, help="directory for test forecasts (.npz)")
     ap.add_argument("--split", nargs=3, type=float, default=[0.8, 0.1, 0.1],
                     help="chronological train/val/test fractions (paper: 0.8 0.1 0.1)")
+    ap.add_argument("--purge", action="store_true",
+                    help="drop the last 131 windows of train and validation (no target overlap between splits)")
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -252,7 +266,7 @@ def main():
     done = {key(json.loads(line)) for line in out.read_text().splitlines()} if out.exists() else set()
     jobs = [
         dict(variant=v, seed=s, lr=args.lr, epochs=args.epochs, threads=args.threads, save_dir=args.save_dir,
-             split=list(args.split))
+             split=list(args.split), purge=args.purge)
         for v, s in itertools.product(args.variants, args.seeds)
     ]
     jobs = [j for j in jobs if key(j) not in done]

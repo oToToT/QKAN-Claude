@@ -12,6 +12,9 @@ Closed-form references (no training):
   lin_ctx      a separate ridge AR(q) fitted inside every window (q, the ridge
                strength and the use of an intercept chosen on validation) -
                the "in-context linear" oracle
+  poly_ctx     the same with the quadratic features of two lags,
+               [1, x_t, x_{t-1}, x_t^2, x_t x_{t-1}, x_{t-1}^2] (ridge strength
+               chosen on validation) - exact for the Henon map without noise
 """
 
 from __future__ import annotations
@@ -51,7 +54,9 @@ def references(sp: dict) -> dict:
     import numpy as np
 
     out = {}
-    (xtr, ytr), (xva, yva), (xte, yte) = (tuple(a.astype(np.float64) for a in sp[k]) for k in ("train", "val", "test"))
+    # inputs in float64, targets rounded to float32: exactly what the neural models get
+    (xtr, ytr), (xva, yva), (xte, yte) = ((sp[k][0].astype(np.float64), sp[k][1].astype(np.float32).astype(np.float64))
+                                          for k in ("train", "val", "test"))
     xtr, xva, xte = xtr[..., 0], xva[..., 0], xte[..., 0]
     mse = lambda p, y: float(np.mean((p - y[:, 0]) ** 2))  # noqa: E731
     out["persist"] = dict(test=mse(xte[:, -1], yte), val=mse(xva[:, -1], yva), params=0)
@@ -91,6 +96,24 @@ def references(sp: dict) -> dict:
                     best = dict(val=v, test=mse(ctx_pred(xte, q, lam, intercept), yte), params=0, order=q,
                                 ridge=float(lam), intercept=intercept)
     out["lin_ctx"] = best
+
+    # quadratic features of two lags, ridge fitted inside every window
+    def quad(a, b):  # a = x_t, b = x_{t-1}
+        return np.stack([np.ones_like(a), a, b, a * a, a * b, b * b], -1)
+
+    def poly_pred(x, lam):
+        feats = quad(x[:, 1:-1], x[:, :-2])  # pairs (x_t, x_{t-1}) -> x_{t+1}, t = 1 .. T-2
+        target = x[:, 2:]
+        g = np.einsum("nmi,nmj->nij", feats, feats) + lam * np.eye(6)
+        coef = np.linalg.solve(g, np.einsum("nmi,nm->ni", feats, target)[..., None])[..., 0]
+        return np.einsum("ni,ni->n", quad(x[:, -1], x[:, -2]), coef)
+
+    best = None
+    for lam in 10.0 ** np.arange(-14, 1.0):
+        v = mse(poly_pred(xva, lam), yva)
+        if best is None or v < best["val"]:
+            best = dict(val=v, test=mse(poly_pred(xte, lam), yte), params=0, ridge=float(lam))
+    out["poly_ctx"] = best
     return out
 
 
