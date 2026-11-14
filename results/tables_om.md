@@ -100,7 +100,7 @@ Geometric mean over the four windows per dataset; the last two columns count the
 - Linear AR(8) is lower than QKAN-FWP-O in 13/24 cells.
 - Linear AR(8) is lower than the best printed number of the two papers in 21/24 cells.
 
-## Same memory, different features on the paper benchmarks (test MSE, geometric mean over the four windows; last column: factor to the first row over the cells both have)
+## Same memory, different features on the paper benchmarks (test MSE, geometric mean over the four windows; last column: factor to the first row over the 20 cells of the five 300-point series)
 
 | Variant | Params | Bessel J2 | Damped SHM | NARMA5 | NARMA10 | Delayed quantum control | Jaynes–Cummings | vs first row |
 |---|---|---|---|---|---|---|---|---|
@@ -108,12 +108,12 @@ Geometric mean over the four windows per dataset; the last two columns count the
 | cos u, sin u of the same 6 units (same function space, no circuit) | 88–112 | 2.9e-12 | 6.0e-12 | 4.2e-07 | 4.3e-07 | 2.5e-08 | – | 1.1× |
 | cos u, sin u of 8 units (same number of features) | 116–148 | 2.0e-12 | 4.6e-12 | 3.7e-07 | 3.1e-07 | 3.1e-08 | – | 0.94× |
 | cos(w·u + b), 3 per unit, w and b trainable | 142–166 | 2.7e-12 | 6.4e-12 | 4.2e-07 | 5.3e-07 | 2.0e-08 | 4.4e-13 | 1.1× |
-| tanh(w·u + b), 3 per unit | 142–166 | 2.5e-12 | 5.5e-12 | 4.4e-07 | 2.9e-07 | 2.1e-08 | 3.8e-13 | 0.92× |
+| tanh(w·u + b), 3 per unit | 142–166 | 2.5e-12 | 5.5e-12 | 4.4e-07 | 2.9e-07 | 2.1e-08 | 3.8e-13 | 0.95× |
 | products u_i·u_j (quadratic polynomial) | 115–139 | 8.8e-13 | 8.2e-12 | 5.2e-07 | 5.4e-07 | 5.3e-08 | – | 1.2× |
 | 8 tanh units of a second layer (small MLP) | 132–156 | 1.7e-12 | 2.9e-12 | 6.3e-07 | 3.1e-07 | 2.6e-08 | – | 0.89× |
-| linear term only | 52–76 | 1.4e-12 | 1.9e-11 | 6.4e-07 | 4.5e-07 | 4.9e-08 | 1.1e-13 | 1.1× |
+| linear term only | 52–76 | 1.4e-12 | 1.9e-11 | 6.4e-07 | 4.5e-07 | 4.9e-08 | 1.1e-13 | 1.5× |
 
-## Same features, different memory rule on the paper benchmarks (test MSE, geometric mean over the four windows; last column: factor to the first row over the cells both have)
+## Same features, different memory rule on the paper benchmarks (test MSE, geometric mean over the four windows; last column: factor to the first row over the 20 cells of the five 300-point series)
 
 | Variant | Params | Bessel J2 | Damped SHM | NARMA5 | NARMA10 | Delayed quantum control | Jaynes–Cummings | vs first row |
 |---|---|---|---|---|---|---|---|---|
@@ -123,7 +123,7 @@ Geometric mean over the four windows per dataset; the last two columns count the
 | normalised delta rule, 4 sweeps over the context | 130–154 | 1.3e-09 | 3.9e-08 | 9.5e-07 | 1.5e-06 | 4.5e-07 | – | 59× |
 | normalised delta rule, 1 sweep | 130–154 | 2.5e-09 | 2.3e-08 | 9.2e-07 | 1.5e-06 | 4.9e-07 | – | 62× |
 | no memory, 9 circuits (same number of parameters) | 118–154 | 1.4e-08 | 8.5e-08 | 2.0e-06 | 2.0e-06 | 1.2e-06 | – | 164× |
-| no memory, 6 circuits | 79–103 | 2.4e-08 | 9.3e-08 | 2.1e-06 | 2.2e-06 | 1.2e-06 | 4.0e-13 | 77× |
+| no memory, 6 circuits | 79–103 | 2.4e-08 | 9.3e-08 | 2.1e-06 | 2.2e-06 | 1.2e-06 | 4.0e-13 | 190× |
 
 ## QKAN-FWP-O ablation on the paper benchmarks (test MSE ÷ full model, geometric mean over the cells both have)
 
@@ -388,6 +388,40 @@ Read-out error e: every measured expectation v becomes (1 − 3e)·v + e (P(read
 | Family: Hénon map | read-out 1 % | 3.4e-05 | 3.4e-05 | 1.7e-03 | 1.8e-03 | 50× |
 | Family: Hénon map | depolarising 1 % | 3.4e-05 | 3.4e-05 | 3.5e-04 | 3.4e-04 | 10× |
 | Family: Hénon map | over-rotation 1 % | 3.4e-05 | 3.7e-05 | 2.2e-04 | 2.1e-04 | 5.9× |
+
+## Solar cycle, splits by target time (528 → 132 months; the last 131 windows of train and validation are removed)
+
+For every model the learning rate is the one with the lowest validation loss among those run (the paper's grid); test metrics are mean ± std over seeds. The test windows are the same as in the window-index split.
+
+### paper split 80/10/10
+
+| Model | Params | lr (by validation) | Seeds | Val. loss | Scaled MSE ↓ | PAE ↓ | PTE ↓ |
+|---|---|---|---|---|---|---|---|
+| GQKAN-QKANFWP (re-implemented baseline) | 12,423 | 0.0025 | 5 | 2.98 | 0.0208 ± 0.0015 | 43.9 ± 2.1 | 29.8 ± 3.5 |
+| QKAN-FWP+ | 11,732 | 0.001 | 5 | 2.94 | 0.0163 ± 0.0009 | 36.3 ± 0.8 | 20.1 ± 2.0 |
+| QKAN-FWP-O without fast weights (static observable) | 496 | 0.0025 | 5 | 2.87 | 0.0150 ± 0.0011 | 34.5 ± 1.3 | 19.0 ± 1.1 |
+| QKAN-FWP-O | 547 | 0.001 | 5 | 3.50 | 0.0173 ± 0.0003 | 41.7 ± 2.2 | 36.6 ± 3.8 |
+| *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | – | – | 0.0156 | 35.9 | 16.2 |
+
+### 60/20/20 (test targets 1971–2026)
+
+| Model | Params | lr (by validation) | Seeds | Val. loss | Scaled MSE ↓ | PAE ↓ | PTE ↓ |
+|---|---|---|---|---|---|---|---|
+| GQKAN-QKANFWP (re-implemented baseline) | 12,423 | 0.0025 | 5 | 4.72 | 0.0177 ± 0.0006 | 73.0 ± 4.7 | 28.1 ± 1.0 |
+| QKAN-FWP+ | 11,732 | 0.0025 | 5 | 4.58 | 0.0206 ± 0.0037 | 70.2 ± 4.3 | 29.5 ± 3.1 |
+| QKAN-FWP-O without fast weights (static observable) | 496 | 0.0025 | 5 | 4.20 | 0.0165 ± 0.0001 | 54.7 ± 0.6 | 19.1 ± 0.8 |
+| QKAN-FWP-O | 547 | 0.0025 | 5 | 3.50 | 0.0184 ± 0.0002 | 59.0 ± 0.8 | 28.7 ± 1.0 |
+| *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | – | – | 0.0166 | 53.1 | 18.7 |
+
+### 70/15/15 (test targets 1982–2026)
+
+| Model | Params | lr (by validation) | Seeds | Val. loss | Scaled MSE ↓ | PAE ↓ | PTE ↓ |
+|---|---|---|---|---|---|---|---|
+| GQKAN-QKANFWP (re-implemented baseline) | 12,423 | 0.0025 | 3 | 4.57 | 0.0155 ± 0.0002 | 64.5 ± 4.3 | 27.3 ± 0.7 |
+| QKAN-FWP+ | 11,732 | 0.0025 | 3 | 4.70 | 0.0154 ± 0.0007 | 46.5 ± 3.5 | 24.6 ± 1.1 |
+| QKAN-FWP-O without fast weights (static observable) | 496 | 0.0025 | 3 | 3.77 | 0.0120 ± 0.0001 | 47.9 ± 0.6 | 21.1 ± 0.2 |
+| QKAN-FWP-O | 547 | 0.0025 | 3 | 3.75 | 0.0125 ± 0.0004 | 47.3 ± 1.8 | 22.2 ± 0.9 |
+| *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | – | – | 0.0168 | 38.5 | 18.8 |
 
 ## Solar cycle, window-index split of the paper (targets of neighbouring splits overlap by 131 months)
 
