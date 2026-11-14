@@ -1,4 +1,15 @@
-"""Build the figures and markdown tables of REPORT.md from results/*.jsonl."""
+"""Figures and markdown tables for the gated fast-weight programmers.
+
+single_change_report()  one change at a time on top of the re-implemented
+                        baseline -> results/tables_single_change.md,
+                        figures/single_change_ablation.png
+final_report()          parameter-matched models (QKAN-FWP+, HQKAN-Δ), the
+                        reproduction gap, robustness checks and the solar
+                        benchmark -> results/tables_final.md, figures/*.png
+
+The comparison that also includes CMG and the observable-memory FWP is built
+by experiments/make_om_report.py.
+"""
 
 from __future__ import annotations
 
@@ -345,7 +356,9 @@ class TableNames(dict):
     __getitem__ = get
 
 
-def main():
+def single_change_report():
+    """Effect of each individual change (learning rate, residual read-out,
+    Δ-tokens, grouped gates) on the re-implemented baseline."""
     FIG.mkdir(exist_ok=True)
     out = []
     ts_files = sorted(RES.glob("final_timeseries*.jsonl"))
@@ -359,10 +372,6 @@ def main():
                 c[(d, w, "base_tuned")] = vals
         params["base_tuned"] = params.get("base", 0)
         main_v = ["base", "base_tuned", "skip_dif3@cos30", "skip_mtg_dif3@cos30"]
-        fig_base_vs_ext(c, [("base", INK2, "Baseline, paper protocol", "s"), ("base_tuned", BLUE, "Baseline, tuned lr", "o"),
-                            ("skip_dif3@cos30", ORANGE, "Extended, tuned lr", "D"),
-                            ("skip_mtg_dif3@cos30", AQUA, "Extended + multi-timescale gates", "^")],
-                        FIG / "stage1_main.png")
         out += ["## Time series: main comparison (test MSE, mean ± std over 5 seeds)\n",
                 table_cells(c, main_v, TableNames()), ""]
         groups = [
@@ -374,7 +383,7 @@ def main():
         abl = [v for _, vs in groups for v in vs if any(k[2] == v for k in c)]
         # restrict the ablation to the cells every ablation variant was run on
         sub = {k: v for k, v in c.items() if k[0] != "jc" and k[1] in (16, 64)}
-        fig_ablation(sub, groups, NAMES, FIG / "stage1_ablation.png",
+        fig_ablation(sub, groups, NAMES, FIG / "single_change_ablation.png",
                      "Ablation: test MSE relative to the paper-protocol baseline")
         abl_names = TableNames()
         out += ["## Time series: ablation (5 series × N ∈ {16, 64}; ratio of seed-mean test MSE to the paper-protocol baseline)\n",
@@ -423,17 +432,13 @@ def main():
                         a = np.array([r["test"]["mse"] for r in by622[v]])
                         out.append(f"- {SOLAR_NAMES[v]}: scaled MSE {a.mean() / b.mean() - 1:+.1%} vs baseline, Welch p = {welch_p(a, b):.3g}")
                 out.append("")
-        pair = [("base", BLUE, "Baseline (scalar gate)"), ("mtg", ORANGE, "Multi-timescale gates")]
-        fig_solar_forecast(by, pair, FIG / "stage1_solar_forecast.png")
-        fig_memory_kernel(FIG / "stage1_solar_memory_kernel.png")
-        fig_solar_error_by_start(pair, FIG / "stage1_solar_error_by_start.png")
-        fig_solar_error_by_start(pair, FIG / "stage1_solar_error_by_start_split622.png", RES / "solar_preds_split622")
-    (RES / "tables_stage1.md").write_text("\n".join(out) + "\n")
+    (RES / "tables_single_change.md").write_text("\n".join(out) + "\n")
 
 
 # ===========================================================================
 # Final, parameter-matched comparison
 # ===========================================================================
+OM = "om_c0h6r1_p5@cos30"  # observable-memory FWP (QKAN-FWP-O), see qkanfwp/obsmem.py
 OURS = "pmx_diff8_edge_h3l2@cos30"  # improved gated QKAN-FWP (paper's read-before-write order)
 OURS_WF = "pmx_diff8_edge_h3l2_wf@cos30"  # same, write-then-read
 STATIC = "ar_hqkan8@cos30"  # static HQKAN on the last token (no fast weights)
@@ -466,14 +471,14 @@ FINAL_NAMES = {
     "base_tuned": "Baseline GQKAN-QKANFWP, tuned lr",
     "gqkan_fwp_tuned": "GQKAN-FWP, tuned lr",
     "g_qkanfwp_tuned": "G-QKANFWP, tuned lr",
-    OURS: "QKAN-FWP+ (ours)",
-    OURS_WF: "QKAN-FWP+ write-first (ours)",
-    STATIC: "HQKAN-Δ, no fast weights (ours)",
-    "pmx_diff8_edge_h3l2_noskip@cos30": "Ours without residual read-out",
-    "pmx_diff8_scalar_h3l2@cos30": "Ours with the paper's scalar gate",
-    "pm_diff8_edge_h3l2@cos30": "Ours with float32 differences",
-    "pmx_diff3_edge_h3l2@cos30": "Ours with 3-dim instead of 8-dim Δ-tokens",
-    "pmx_diff1_edge_h3l2@cos30": "Ours without Δ-tokens (scalar input)",
+    OURS: "QKAN-FWP+",
+    OURS_WF: "QKAN-FWP+ write-first",
+    STATIC: "HQKAN-Δ, no fast weights",
+    "pmx_diff8_edge_h3l2_noskip@cos30": "QKAN-FWP+ without residual read-out",
+    "pmx_diff8_scalar_h3l2@cos30": "QKAN-FWP+ with the paper's scalar gate",
+    "pm_diff8_edge_h3l2@cos30": "QKAN-FWP+ with float32 differences",
+    "pmx_diff3_edge_h3l2@cos30": "QKAN-FWP+ with 3-dim instead of 8-dim Δ-tokens",
+    "pmx_diff1_edge_h3l2@cos30": "QKAN-FWP+ without Δ-tokens (scalar input)",
     "ar_hqkan8": "HQKAN-Δ: no fast weights (static HQKAN, same tokens)",
     "lstm_ext8": "LSTM with the same tokens and residual (not QKAN)",
 }
@@ -512,9 +517,9 @@ def solar_eval_anchor(split):
     return out
 
 
-def review_tables(c, baselines, tuned_b, names, params):
-    """Tables added after the external review: closed-form linear reference,
-    reproduction gap to the printed numbers, and robustness checks."""
+def reference_tables(c, baselines, tuned_b, names, params):
+    """Closed-form linear reference, reproduction gap to the printed numbers,
+    and robustness checks (read-out, normalisation, NARMA transient)."""
     out = []
     gmean = lambda xs: float(np.exp(np.mean(np.log(xs))))  # noqa: E731
     m = lambda d, w, v, cc=None: float(np.mean(list((cc or c)[(d, w, v)].values())))  # noqa: E731
@@ -571,15 +576,16 @@ def review_tables(c, baselines, tuned_b, names, params):
     out.append("")
 
     # ---- (c) robustness at N = 16 ----
-    conds = [("Default (as in all tables above)", c, {"base": "base", "tuned": "base_tuned", "fwp": OURS, "static": STATIC})]
+    conds = [("Default (as in all tables above)", c, {"base": "base", "tuned": "base_tuned", "fwp": OURS, "static": STATIC}, c)]
     f = RES / "robust_exactz.jsonl"
     if f.exists():
         cz = cells(load([f], protocol="paper"))
         for (d, w, v), vals in list(cz.items()):
             if (v == "base+z@cos10" and d == "jc") or (v == "base+z@cos30" and d != "jc"):
                 cz[(d, w, "tuned+z")] = vals
+        # QKAN-FWP-O always measures physical <X>, <Y>, <Z>: its default numbers apply here
         conds.append(("Physical read-out ⟨Z⟩ = |a|² − |b|² in every DARUAN circuit", cz,
-                      {"base": "base+z", "tuned": "tuned+z", "fwp": "pmx_diff8_edge_h3l2+z@cos30", "static": "ar_hqkan8+z@cos30"}))
+                      {"base": "base+z", "tuned": "tuned+z", "fwp": "pmx_diff8_edge_h3l2+z@cos30", "static": "ar_hqkan8+z@cos30"}, c))
     f = RES / "robust_norm.jsonl"
     if f.exists():
         rows_n = [r for r in load([f], protocol="paper") if r.get("norm") == "train"]
@@ -588,38 +594,50 @@ def review_tables(c, baselines, tuned_b, names, params):
             if (v == "base@cos10" and d == "jc") or (v == "base@cos30" and d != "jc"):
                 cn[(d, w, "base_tuned")] = vals
         conds.append(("Min–max scaling fitted on the training part only", cn,
-                      {"base": "base", "tuned": "base_tuned", "fwp": OURS, "static": STATIC}))
+                      {"base": "base", "tuned": "base_tuned", "fwp": OURS, "static": STATIC}, cn))
     out += ["## Robustness checks at N = 16 (test MSE, 5 seeds)\n"]
-    for title, cc, v in conds:
+    for title, cc, v, c_om in conds:
         ds = [d for d in DATASETS if all((d, 16, v[k]) in cc for k in v)]
         if not ds:
             continue
-        out += [f"**{title}**\n", "| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |", "|---|---|---|---|---|"]
+        has_om = all((d, 16, OM) in c_om for d in ds)
+        out += [f"**{title}**\n", "| Dataset | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |" + (" QKAN-FWP-O |" if has_om else ""),
+                "|---|---|---|---|---|" + ("---|" if has_om else "")]
         for d in ds:
-            out.append(f"| {TITLES[d]} | " + " | ".join(f"{m(d, 16, v[k], cc):.2e}" for k in ("base", "tuned", "fwp", "static")) + " |")
+            out.append(f"| {TITLES[d]} | " + " | ".join(f"{m(d, 16, v[k], cc):.2e}" for k in ("base", "tuned", "fwp", "static"))
+                       + (f" | {m(d, 16, OM, c_om):.2e}" if has_om else "") + " |")
         rf = gmean([m(d, 16, v["fwp"], cc) / m(d, 16, v["tuned"], cc) for d in ds])
         rs = gmean([m(d, 16, v["static"], cc) / m(d, 16, v["tuned"], cc) for d in ds])
         wf_ = sum(m(d, 16, v["fwp"], cc) < m(d, 16, v["tuned"], cc) for d in ds)
         ws = sum(m(d, 16, v["static"], cc) < m(d, 16, v["tuned"], cc) for d in ds)
-        out += ["", f"- vs the tuned baseline over {len(ds)} datasets: QKAN-FWP+ {1 / rf:.0f}× lower ({wf_}/{len(ds)}), HQKAN-Δ {1 / rs:.0f}× lower ({ws}/{len(ds)}).", ""]
+        line = (f"- vs the tuned baseline over {len(ds)} datasets: QKAN-FWP+ {1 / rf:.0f}× lower ({wf_}/{len(ds)}), "
+                f"HQKAN-Δ {1 / rs:.0f}× lower ({ws}/{len(ds)})")
+        if has_om:
+            ro = gmean([m(d, 16, OM, c_om) / m(d, 16, v["tuned"], cc) for d in ds])
+            wo = sum(m(d, 16, OM, c_om) < m(d, 16, v["tuned"], cc) for d in ds)
+            line += f", QKAN-FWP-O {1 / ro:.2g}× lower ({wo}/{len(ds)})"
+        out += ["", line + ".", ""]
 
     # ---- (d) NARMA without the start-up transient ----
     f = RES / "robust_burnin.jsonl"
     if f.exists():
         cb = cells(load([f], protocol="paper"))
+        bcols = ["base", "base@cos30", OURS, STATIC] + ([OM] if any(k[2] == OM for k in cb) else [])
         out += ["## NARMA without the start-up transient (200 burn-in steps discarded; test MSE, 5 seeds)\n",
-                "| Dataset | N | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |", "|---|---|---|---|---|---|"]
+                "| Dataset | N | Baseline, paper protocol | Baseline, tuned lr | QKAN-FWP+ | HQKAN-Δ |" + (" QKAN-FWP-O |" if OM in bcols else ""),
+                "|---|---|---|---|---|---|" + ("---|" if OM in bcols else "")]
         for d, t_ in (("narma5b", "NARMA5"), ("narma10b", "NARMA10")):
             for w in (8, 16):
-                if all((d, w, v) in cb for v in ("base", "base@cos30", OURS, STATIC)):
-                    out.append(f"| {t_} | {w} | " + " | ".join(f"{m(d, w, v, cb):.2e}" for v in ("base", "base@cos30", OURS, STATIC)) + " |")
+                if all((d, w, v) in cb for v in bcols):
+                    out.append(f"| {t_} | {w} | " + " | ".join(f"{m(d, w, v, cb):.2e}" for v in bcols) + " |")
         out.append("")
     return out
 
 
 def final_report():
     out = []
-    rows = load(sorted(RES.glob("final_timeseries*.jsonl")), protocol="paper")
+    rows = load(sorted(RES.glob("final_timeseries*.jsonl")) + [f for f in (RES / "final_om.jsonl",) if f.exists()],
+                protocol="paper")
     c = cells(rows)
     params = {r["variant"]: r["params"] for r in rows}
     # each baseline with its validated learning rate
@@ -657,7 +675,7 @@ def final_report():
             table_cells(c, baselines + ours_all, {v: label(v) for v in baselines + ours_all}), ""]
     for ours in ours_all:
         out += [f"## {names[ours]} ({params[ours]} params) vs each baseline over the 24 cells\n",
-                "| Baseline | Params | Ours ÷ baseline (geo-mean test MSE) | Cells where ours is better | Smallest / largest factor |",
+                "| Baseline | Params | Model ÷ baseline (geo-mean test MSE) | Cells where the model is better | Smallest / largest factor |",
                 "|---|---|---|---|---|"]
         for b in baselines:
             r, wins, n, (lo_, hi_) = ratio_stats(c, ours, b)
@@ -694,7 +712,7 @@ def final_report():
         out.append(row)
     out.append("")
 
-    out += ["## Ours vs the numbers printed in the paper (Tables 4–6)\n",
+    out += ["## Models of this repository vs the numbers printed in the paper (Tables 4–6)\n",
             "| Dataset | N | Paper: GQKAN-QKANFWP | Paper: best of its models | " + " | ".join(names[o] for o in ours_all) + " |",
             "|---|---|---|---|" + "---|" * len(ours_all)]
     tally = {o: [0, 0, 0] for o in ours_all}
@@ -727,21 +745,11 @@ def final_report():
               ("QKAN-FWP+ and what each part contributes", [v for v in abl if v not in ("ar_hqkan8", "lstm_ext8")]),
               ("Without fast weights", [v for v in ("ar_hqkan8", "lstm_ext8") if v in abl])]
     fig_ablation(sub, groups, {v: f"{names[v]} ({params[v]})" for v in names if v in params}, FIG / "timeseries_ablation.png",
-                 "Final model: test MSE relative to the paper-protocol baseline")
-    out += ["## Final-model ablation (5 series × N ∈ {16, 64}; ratio to the paper-protocol baseline)\n",
+                 "QKAN-FWP+ and its parts: test MSE relative to the paper-protocol baseline")
+    out += ["## QKAN-FWP+ ablation (5 series × N ∈ {16, 64}; ratio to the paper-protocol baseline)\n",
             table_ratio(sub, [b for b in baselines if b != "base"] + abl, {v: names[v] for v in names}, params,
                         datasets=[d for d in DATASETS if d != "jc"]), ""]
-    series = [("base", INK2, "Baseline, paper protocol", "s"), ("base_tuned", BLUE, "Baseline, tuned lr", "o")]
-    if "gqkan_fwp_tuned" in baselines:
-        series.append(("gqkan_fwp_tuned", AQUA, "GQKAN-FWP, tuned lr", "v"))
-    if "g_qkanfwp_tuned" in baselines:
-        series.append(("g_qkanfwp_tuned", YELLOW, "G-QKANFWP, tuned lr", "^"))
-    series.append((OURS, ORANGE, f"QKAN-FWP+ ({params[OURS]} params)", "D"))
-    if STATIC in ours_all:
-        series.append((STATIC, "#e87ba4", f"HQKAN-Δ ({params[STATIC]} params)", "P"))
-    fig_base_vs_ext(c, series, FIG / "timeseries_main.png")
-
-    out += review_tables(c, baselines, tuned_b, names, params)
+    out += reference_tables(c, baselines, tuned_b, names, params)
 
     # ---------------- solar ----------------
     by, by622, by715 = {}, {}, {}
@@ -751,10 +759,10 @@ def final_report():
                 split = tuple(r.get("split") or (0.8, 0.1, 0.1))
                 {(0.8, 0.1, 0.1): by, (0.6, 0.2, 0.2): by622, (0.7, 0.15, 0.15): by715}[split].setdefault(k, []).append(r)
     if SOLAR_OURS in by:
-        snames = {"base": "Baseline GQKAN-QKANFWP (scalar gate)", SOLAR_OURS: "Ours: multi-timescale gates + last-cycle residual read-out",
-                  "mtg_pm": "Ours without the last-cycle read-out (gates only)", "base_cyc": "Ours without multi-timescale gates (read-out only)",
+        snames = {"base": "Baseline GQKAN-QKANFWP (scalar gate)", SOLAR_OURS: "QKAN-FWP+: grouped gates + last-cycle residual read-out",
+                  "mtg_pm": "QKAN-FWP+ without the last-cycle read-out (gates only)", "base_cyc": "QKAN-FWP+ without grouped gates (read-out only)",
                   "base@lr1": "Baseline, lr 1e-3", "base@lr2": "Baseline, lr 2e-3",
-                  SOLAR_OURS + "@lr1": "Ours, lr 1e-3", SOLAR_OURS + "@lr2": "Ours, lr 2e-3"}
+                  SOLAR_OURS + "@lr1": "QKAN-FWP+, lr 1e-3", SOLAR_OURS + "@lr2": "QKAN-FWP+, lr 2e-3"}
 
         def srow(name, params_, m, extra=""):
             return f"| {name} | {params_} | {m['mse']} | {m['pae']} | {m['pte']} | {extra} |"
@@ -778,12 +786,12 @@ def final_report():
         b = by["base"]
         for k in ("mse", "pae", "pte"):
             x_, y_ = np.array([r["test"][k] for r in by[SOLAR_OURS]]), np.array([r["test"][k] for r in b])
-            out.append(f"- Ours vs baseline, {k.upper()}: {x_.mean() / y_.mean() - 1:+.1%} (Welch p = {welch_p(x_, y_):.2g})")
+            out.append(f"- QKAN-FWP+ vs baseline, {k.upper()}: {x_.mean() / y_.mean() - 1:+.1%} (Welch p = {welch_p(x_, y_):.2g})")
         out.append("")
 
         out += ["## Solar cycle: the paper's learning-rate grid (5 seeds each)\n",
                 "| Model | lr | Val. loss (selection criterion) | Scaled MSE | PAE | PTE |", "|---|---|---|---|---|---|"]
-        for fam, tag in (("base", "Baseline"), (SOLAR_OURS, "Ours")):
+        for fam, tag in (("base", "Baseline"), (SOLAR_OURS, "QKAN-FWP+")):
             grid = [(lr, v) for lr, v in (("1e-3", fam + "@lr1"), ("2e-3", fam + "@lr2"), ("2.5e-3", fam)) if v in by]
             best = min(grid, key=lambda g: np.mean([r["val"]["loss"] for r in by[g[1]]]))[1] if grid else None
             for lr, v in grid:
@@ -800,13 +808,13 @@ def final_report():
             for v in ["base", SOLAR_OURS, "mtg"]:
                 if v in by622:
                     vl = np.array([r["val"]["loss"] for r in by622[v]])
-                    nm = snames.get(v, "Multi-timescale gates only (12,632-parameter version)")
+                    nm = snames.get(v, "Baseline + grouped gates (12,632 parameters)")
                     out.append(srow(nm, f"{by622[v][0]['params']:,}", fmt(by622[v]), f"{vl.mean():.2f} ± {vl.std():.2f}"))
             out.append(f"| *Reference: repeat the last cycle, 13-month smoothed* | 0 | {anchor2['mse']:.4f} | {anchor2['pae']:.1f} | {anchor2['pte']:.1f} | – |")
             out.append("")
             for k in ("mse", "pae", "pte"):
                 x_, y_ = np.array([r["test"][k] for r in by622[SOLAR_OURS]]), np.array([r["test"][k] for r in by622["base"]])
-                out.append(f"- Ours vs baseline, {k.upper()}: {x_.mean() / y_.mean() - 1:+.1%} (Welch p = {welch_p(x_, y_):.2g})")
+                out.append(f"- QKAN-FWP+ vs baseline, {k.upper()}: {x_.mean() / y_.mean() - 1:+.1%} (Welch p = {welch_p(x_, y_):.2g})")
             out.append("")
         if SOLAR_OURS in by715 and "base" in by715:
             anchor3 = solar_eval_anchor((0.7, 0.15, 0.15))["test"]
@@ -819,9 +827,9 @@ def final_report():
             out.append("")
             for k in ("mse", "pae", "pte"):
                 x_, y_ = np.array([r["test"][k] for r in by715[SOLAR_OURS]]), np.array([r["test"][k] for r in by715["base"]])
-                out.append(f"- Ours vs baseline, {k.upper()}: {x_.mean() / y_.mean() - 1:+.1%} (Welch p = {welch_p(x_, y_):.2g})")
+                out.append(f"- QKAN-FWP+ vs baseline, {k.upper()}: {x_.mean() / y_.mean() - 1:+.1%} (Welch p = {welch_p(x_, y_):.2g})")
             out.append("")
-        pair = [("base", BLUE, "Baseline (scalar gate)"), (SOLAR_OURS, ORANGE, "Ours")]
+        pair = [("base", BLUE, "Baseline (scalar gate)"), (SOLAR_OURS, ORANGE, "QKAN-FWP+")]
         fig_solar_forecast(by, pair, FIG / "solar_forecast.png")
         fig_memory_kernel(FIG / "solar_memory_kernel.png", multi=SOLAR_OURS)
         fig_solar_error_by_start(pair, FIG / "solar_error_by_start.png")
@@ -831,5 +839,5 @@ def final_report():
 
 
 if __name__ == "__main__":
-    main()
+    single_change_report()
     final_report()

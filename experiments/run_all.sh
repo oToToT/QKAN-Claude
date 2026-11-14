@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
-# Reproduce every number in REPORT.md.  ~15 CPU-core-hours in total; finished
+# Reproduce every number in REPORT.md.  ~25 CPU-core-hours in total; finished
 # jobs are skipped on rerun.  Run from the repository root.
+#
+#   1. re-implemented baseline and single changes on top of it
+#   2. parameter-matched gated model (QKAN-FWP+) and static control (HQKAN-Δ)
+#   3. references and robustness checks
+#   4. observable-memory FWP (QKAN-FWP-O), CMG baselines, families of systems,
+#      finite shots, solar cycle
+#   5. tables, figures and the report
 set -euo pipefail
 SMALL="bessel shm narma5 narma10 dqc"
 
+# ===========================================================================
+# 1. Re-implemented baseline and single changes
+# ===========================================================================
 # ---- design decisions (validation split, seeds 100-102) -------------------
 python experiments/run_timeseries.py --protocol dev --datasets $SMALL --windows 16 64 \
     --variants arch_h6l3r1 arch_r3 arch_h4l4r1 arch_f2 arch_exactz --seeds 100 101 102 103 104 105 \
@@ -41,8 +51,8 @@ python experiments/run_solar.py --variants base@lr1 mtg@lr1 --save-dir results/s
     --out results/final_solar_lr1.jsonl
 
 # ===========================================================================
-# Round 2: fair comparison (QKAN-based, parameter count <= the paper's model,
-# every dataset, every baseline with a validated learning rate)
+# 2. Parameter-matched models: QKAN-based, parameter count <= the paper's
+#    model, every dataset, every baseline with a validated learning rate
 # ===========================================================================
 D=results/dev_param_matched.jsonl
 # candidates within the 152-parameter budget (validation split, seeds 100-102)
@@ -68,13 +78,13 @@ python experiments/run_timeseries.py --protocol dev --datasets jc --windows 16 -
 python experiments/run_timeseries.py --protocol dev --datasets jc --windows 16 --seeds 100 --out results/dev_other_lr_jc.jsonl \
     --variants gqkan_fwp@cos30 gqkan_fwp@cos100 g_qkanfwp@cos10 g_qkanfwp@cos30 ar_hqkan8@cos30 ar_hqkan8@cos10
 
-# final numbers: our three QKAN-based models and the two extra tuned baselines on all 24 cells
+# final numbers: QKAN-FWP+ (both read/write orders), HQKAN-Δ and the two other tuned paper variants on all 24 cells
 P=results/final_timeseries_pm.jsonl
 python experiments/run_timeseries.py --protocol paper --out $P \
     --variants pmx_diff8_edge_h3l2@cos30 pmx_diff8_edge_h3l2_wf@cos30 ar_hqkan8@cos30
 python experiments/run_timeseries.py --protocol paper --datasets $SMALL --variants gqkan_fwp@cos100 g_qkanfwp@cos30 --out $P
 python experiments/run_timeseries.py --protocol paper --datasets jc --variants gqkan_fwp@cos30 g_qkanfwp@cos10 --out $P
-# ablations and the LSTM control of the final model
+# ablations of QKAN-FWP+ and the LSTM control
 python experiments/run_timeseries.py --protocol paper --datasets $SMALL --windows 16 64 --out $P \
     --variants pmx_diff8_edge_h3l2_noskip@cos30 pmx_diff1_edge_h3l2@cos30 pmx_diff3_edge_h3l2@cos30 \
                pm_diff8_edge_h3l2@cos30 pmx_diff8_scalar_h3l2@cos30 lstm_ext8@cos30
@@ -94,9 +104,9 @@ python experiments/run_solar.py --variants mtg_cyc_pm base --seeds 0 1 2 --split
     --out results/final_solar_split71515.jsonl
 
 # ===========================================================================
-# Round 3: checks prompted by external review
+# 3. References and robustness checks
 # ===========================================================================
-OURS=pmx_diff8_edge_h3l2
+FWP=pmx_diff8_edge_h3l2
 # closed-form linear autoregression on the same train / test windows
 python experiments/reference_baselines.py
 # does the write-then-read order (as described in arXiv:2607.27945) reproduce the printed baseline numbers?
@@ -108,14 +118,66 @@ python experiments/run_timeseries.py --protocol paper --datasets narma5 narma10 
     --variants base base+wf g_qkanfwp g_qkanfwp+wf --out results/robust_norm.jsonl
 # physical <Z> read-out, train-only normalisation, NARMA without the start-up transient
 python experiments/run_timeseries.py --protocol paper --datasets $SMALL --windows 16 --out results/robust_exactz.jsonl \
-    --variants base+z base+z@cos30 $OURS+z@cos30 ar_hqkan8+z@cos30
+    --variants base+z base+z@cos30 $FWP+z@cos30 ar_hqkan8+z@cos30
 python experiments/run_timeseries.py --protocol paper --datasets jc --windows 16 --out results/robust_exactz.jsonl \
-    --variants base+z base+z@cos10 $OURS+z@cos30 ar_hqkan8+z@cos30
+    --variants base+z base+z@cos10 $FWP+z@cos30 ar_hqkan8+z@cos30
 python experiments/run_timeseries.py --protocol paper --datasets $SMALL --windows 16 --norm train --out results/robust_norm.jsonl \
-    --variants base base@cos30 $OURS@cos30 ar_hqkan8@cos30
+    --variants base base@cos30 $FWP@cos30 ar_hqkan8@cos30
 python experiments/run_timeseries.py --protocol paper --datasets jc --windows 16 --norm train --out results/robust_norm.jsonl \
-    --variants base base@cos10 $OURS@cos30 ar_hqkan8@cos30
+    --variants base base@cos10 $FWP@cos30 ar_hqkan8@cos30
 python experiments/run_timeseries.py --protocol paper --datasets narma5b narma10b --windows 8 16 --out results/robust_burnin.jsonl \
-    --variants base base@cos30 $OURS@cos30 ar_hqkan8@cos30
+    --variants base base@cos30 $FWP@cos30 ar_hqkan8@cos30
 
+# ===========================================================================
+# 4. Observable-memory FWP (QKAN-FWP-O), CMG baselines, families, shots, solar
+# ===========================================================================
+OM=om_c0h6r1_p5
+# configuration of QKAN-FWP-O (validation split)
+python experiments/run_timeseries.py --protocol dev --datasets $SMALL --windows 8 16 64 --seeds 0 1 2 --out results/dev_om.jsonl \
+    --variants om_c4h4r2_p3@cos30 om_c4h4r2_p5@cos30 om_c4h4r2_p7@cos30 om_c8h4r2_p3@cos30 om_c8h4r2_p5@cos30 om_c8h4r2_p7@cos30 \
+               om_c8h4r2_p5_m2@cos30 om_c8h4r2_p5_m4@cos30 om_c8h4r2_p5_m6@cos30 om_c8h4r2_p5_nomask@cos30 \
+               om_c5h4r2_p5@cos30 om_c6h4r2_p5@cos30 om_c7h4r2_p5@cos30 om_c6h5r2_p5@cos30 om_c6h4r1_p5@cos30 om_c6h4r3_p5@cos30 \
+               om_c6h4r2_p7@cos30 om_c6h4r2_p3@cos30 om_c6h6r1_p5@cos30 $OM@cos30
+python experiments/run_timeseries.py --protocol dev --datasets jc --windows 8 16 64 --seeds 0 1 --out results/dev_om.jsonl \
+    --variants om_c6h6r1_p5@cos30 om_c6h6r1_p5@cos10
+# final numbers: QKAN-FWP-O, its ablations, and the CMG baselines
+python experiments/run_timeseries.py --datasets $SMALL --out results/final_om.jsonl \
+    --variants $OM@cos30 om_c0h4r1_p5@cos30 om_c6h6r1_p5@cos30 ${OM}_static@cos30 ${OM}_classical@cos30 ${OM}_nobase@cos30 \
+               ${OM}_gconst@cos30 ${OM}_gnone@cos30 ${OM}_delta@cos30 ${OM}_pscalar@cos30
+python experiments/run_timeseries.py --datasets jc --out results/final_om.jsonl \
+    --variants $OM@cos30 ${OM}_static@cos30 ${OM}_classical@cos30
+python experiments/run_timeseries.py --datasets $SMALL --variants cmg cmg@cos30 cmg_plus@cos30 --out results/final_cmg.jsonl
+python experiments/run_timeseries.py --datasets jc --variants cmg@cos10 cmg_plus@cos30 --out results/final_cmg.jsonl
+# robustness of QKAN-FWP-O: train-only normalisation, NARMA without the start-up transient
+python experiments/run_timeseries.py --windows 16 --norm train --variants $OM@cos30 --out results/robust_norm.jsonl
+python experiments/run_timeseries.py --datasets narma5b narma10b --windows 8 16 --variants $OM@cos30 --out results/robust_burnin.jsonl
+
+# families of systems: learning-rate sweep on seed 0, then seeds 1-2 at the rate with the lowest validation MSE
+FV=""
+for v in $OM ${OM}_static ${OM}_classical ${OM}_gnone ${OM}_delta ar_hqkan8 pmx_diff8_edge_h3l2 cmg_plus cmg base lstm_ext8; do
+    FV="$FV $v@cos3 $v@cos10 $v@cos30"
+done
+python experiments/run_family.py --windows 16 --noise 0 0.02 --variants refs $FV --seeds 0 --out results/family_lr.jsonl
+[ -f results/family.jsonl ] || cp results/family_lr.jsonl results/family.jsonl
+python experiments/run_family.py --windows 16 --noise 0 0.02 --best-lr-from results/family_lr.jsonl --seeds 0 1 2 \
+    --out results/family.jsonl
+
+# finite shots
+python experiments/shot_noise.py --variants $OM@cos30 ar_hqkan8+z@cos30 pmx_diff8_edge_h3l2+z@cos30 --train-shots 0 1e4 \
+    --out results/shot_noise.jsonl
+
+# solar cycle: configuration sweep (compared on validation loss), then both versions on the three splits
+python experiments/run_solar.py --seeds 0 1 --out results/dev_solar_om.jsonl \
+    --variants om om_static om_gnone om_classical om_last om_b8 om_b24 om_h4 om_h10 om_c6 om_c22p6 om_p1 om_p4 om_s1 om@lr1 om_static@lr1
+for lr in 2.5e-3 1e-3; do
+    python experiments/run_solar.py --variants om_static om --lr $lr --out results/final_solar_om.jsonl
+done
+python experiments/run_solar.py --variants om_static om --split 0.6 0.2 0.2 --out results/final_solar_om.jsonl
+python experiments/run_solar.py --variants om_static om --split 0.7 0.15 0.15 --seeds 0 1 2 --out results/final_solar_om.jsonl
+
+# ===========================================================================
+# 5. Tables, figures, report
+# ===========================================================================
 python experiments/make_figures.py
+python experiments/make_om_report.py
+python experiments/report/build_report.py
