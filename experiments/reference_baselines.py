@@ -15,6 +15,10 @@ code (``c_*``, see qkanfwp/data.py): there the regression maps the last p
 *inputs* of the window to the target, which for NARMA means the drive u to the
 output y.  ``mean`` is the error of predicting the mean of the training
 targets; ``order = 0`` in the key stands for a regression on the whole window.
+For the two NARMA tasks the key ``...|q`` holds a ridge regression on the last
+12 inputs and their pairwise products (the NARMA output is a quadratic function
+of the drive); its ridge strength is chosen on the last eighth of the training
+windows.
 
 Writes results/reference_linear_ar.json and prints a markdown table.
 """
@@ -63,6 +67,26 @@ def linear_code(name: str, window: int, order: int) -> dict:
                 mean=float(((y[tr].mean() - y[te]) ** 2).mean()))
 
 
+def quadratic_code(name: str, window: int, lags: int = 12) -> dict:
+    """Ridge regression on the last ``lags`` inputs and their pairwise products."""
+    x, y = data.code_windows(name, window)
+    x, y = x[..., 0], y[:, 0].astype(np.float64)
+    tr, te = data.code_split(len(x))
+    lag = x[:, -min(lags, window):]
+    p = lag.shape[1]
+    design = np.c_[lag, np.stack([lag[:, i] * lag[:, j] for i in range(p) for j in range(i, p)], 1), np.ones(len(x))]
+    fit_part, held = tr[: len(tr) * 7 // 8], tr[len(tr) * 7 // 8 :]
+
+    def solve(idx, lam):
+        a = design[idx]
+        return np.linalg.solve(a.T @ a + lam * np.eye(a.shape[1]), a.T @ y[idx])
+
+    grid = [1e-14, 1e-12, 1e-10, 1e-8, 1e-6, 1e-4]
+    lam = min(grid, key=lambda v: ((design[held] @ solve(fit_part, v) - y[held]) ** 2).mean())
+    err = (design @ solve(tr, lam) - y) ** 2
+    return dict(train=float(err[tr].mean()), test=float(err[te].mean()), ridge=lam, features=design.shape[1])
+
+
 def main():
     out = {}
     for d in DATASETS:
@@ -73,6 +97,8 @@ def main():
         for w in WINDOWS:
             for p in ORDERS + [0]:
                 out[f"{d}|{w}|{p}"] = linear_code(d, w, p)
+            if "narma" in d:
+                out[f"{d}|{w}|q"] = quadratic_code(d, w)
     (ROOT / "results" / "reference_linear_ar.json").write_text(json.dumps(out, indent=1))
     print("| Dataset | N | Persistence (x̂ = last value) | Linear AR(3), 4 params | Linear AR(8), 9 params |")
     print("|---|---|---|---|---|")
@@ -85,7 +111,9 @@ def main():
     for d in CODE_DATASETS:
         for w in WINDOWS:
             a, b, c = (out[f"{d}|{w}|{p}"] for p in (3, 8, 0))
-            print(f"| {d} | {w} | {a['mean']:.1e} | {a['test']:.1e} | {b['test']:.1e} | {c['test']:.1e} |")
+            q = out.get(f"{d}|{w}|q")
+            print(f"| {d} | {w} | {a['mean']:.1e} | {a['test']:.1e} | {b['test']:.1e} | {c['test']:.1e} |"
+                  + (f" quadratic ridge: {q['test']:.1e} |" if q else ""))
 
 
 if __name__ == "__main__":
