@@ -34,6 +34,7 @@ def fit(
     select_on: str | None = None,
     eval_every: int = 1,
     weight_decay: float = 0.0,
+    grad_clip: float | None = None,
 ) -> dict:
     """Adam training following the paper's protocol.
 
@@ -43,6 +44,7 @@ def fit(
         select_on: name of an eval split; if given, the returned ``best`` entry
             reports all metrics at the epoch with the lowest loss on that split
             and the model is restored to that checkpoint.
+        grad_clip: if given, clip the global gradient norm to this value.
     """
     x_tr, y_tr = train
     gen = torch.Generator().manual_seed(seed)
@@ -71,6 +73,8 @@ def fit(
             loss = loss_fn(model(x_tr[idx]), y_tr[idx])
             opt.zero_grad(set_to_none=True)
             loss.backward()
+            if grad_clip is not None:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
             opt.step()
             if sched is not None:
                 sched.step()

@@ -101,7 +101,50 @@ VARIANTS = {
     "gqkan_fwp_ext": fwp(SKIP, DIF3, fast="linear", fast_out=3),
     "g_qkanfwp": fwp(slow="mlp", slow_hidden=8),  # classical slow, HQKAN fast
     "g_qkanfwp_ext": fwp(SKIP, DIF3, slow="mlp", slow_hidden=8),
+    # ---- complementary matrix gate (CMG, arXiv:2607.27945) --------------------
+    # paper-style: scalar tokens, write-then-read, rank-one per-weight gate
+    "cmg": fwp(gate="cmg", write_first=True),
+    # CMG given this repository's tokens and residual read-out (strongest version)
+    "cmg_plus": fwp(SKIP, gate="cmg", write_first=True, context=8, context_mode="diff",
+                    token_dtype="float64", slow_latent=2),
 }
+
+
+def om_variant(name: str) -> dict:
+    """Observable-memory FWP, e.g. ``om_c4h4r2`` (context 4, 4 feature circuits,
+    2 re-uploading repetitions) plus optional ``_``-separated switches:
+    ``static`` (no fast weights), ``delta`` (sequential delta rule), ``gconst`` /
+    ``gnone`` (constant gate / additive statistics), ``nobase`` / ``silu`` (QKAN
+    base activation), ``classical`` (no Bloch features), ``nomask``, ``pscalar``
+    (one prior precision), ``lags`` (raw lag tokens), ``p<x>`` (prior_init 10^-x),
+    ``noclip`` (no gradient-norm clipping; the default clips the norm at 1)."""
+    parts = name.split("_")
+    core = parts[1]
+    c, h, r = core.index("c"), core.index("h"), core.index("r")
+    cfg = dict(context=int(core[c + 1 : h]), hidden=int(core[h + 1 : r]), reps=int(core[r + 1 :]))
+    train = dict(grad_clip=1.0)
+    switches = {
+        "static": dict(memory="none"), "delta": dict(memory="delta"),
+        "gconst": dict(gate="const"), "gnone": dict(gate="none"),
+        "nobase": dict(base="none"), "silu": dict(base="silu"),
+        "classical": dict(quantum=False), "nomask": dict(mask_padded=False),
+        "pscalar": dict(prior="scalar"), "lags": dict(context_mode="lags"),
+    }
+    for extra in parts[2:]:
+        if extra in switches:
+            cfg.update(switches[extra])
+        elif extra.startswith("p") and extra[1:].isdigit():
+            cfg.update(prior_init=10.0 ** -int(extra[1:]))
+        elif extra.startswith("m") and extra[1:].isdigit():
+            # write every token that knows >= m values; unknown difference orders are zero
+            cfg.update(min_context=int(extra[1:]), token_pad="truncate")
+        elif extra.startswith("f") and extra[1:].isdigit():
+            cfg.update(prior_floor=10.0 ** -int(extra[1:]))
+        elif extra == "noclip":
+            train = {}
+        else:
+            raise ValueError(name)
+    return dict(kind="om", model=cfg, train=train)
 
 
 def pm_variant(name: str) -> dict:
@@ -139,7 +182,10 @@ def resolve(name: str) -> dict:
     schedule from (or a constant) learning rate of 10e-3 / 3e-3."""
     base, _, tag = name.partition("@")
     base, *mods = base.split("+")
-    spec = dict(pm_variant(base) if base.startswith(("pm_", "pmx_")) else VARIANTS[base])
+    if base.startswith("om_"):
+        spec = om_variant(base)
+    else:
+        spec = dict(pm_variant(base) if base.startswith(("pm_", "pmx_")) else VARIANTS[base])
     # "+z": physical <Z> = |a|^2 - |b|^2 read-out instead of qkan's default |a| - |b|
     # "+wf": write-then-read (predict with the updated fast weights)
     if mods:
@@ -161,13 +207,33 @@ def resolve(name: str) -> dict:
     return spec
 
 
+def build_model(spec: dict, window: int, x_train):
+    """Instantiate the model of a resolved variant and fit its token scales."""
+    from qkanfwp.models import ARHQKAN, FWPConfig, GatedFWP, LSTMBaseline
+    from qkanfwp.obsmem import ObservableMemoryFWP, ObsMemConfig
+
+    kind = spec.get("kind", "fwp")
+    if kind == "fwp":
+        model = GatedFWP(FWPConfig(max_len=window, **spec["model"]))
+    elif kind == "ar":
+        model = ARHQKAN(**spec["model"])
+    elif kind == "lstm":
+        model = LSTMBaseline(**spec["model"])
+    elif kind == "om":
+        model = ObservableMemoryFWP(ObsMemConfig(max_len=window, **spec["model"]))
+    else:
+        raise ValueError(kind)
+    model.fit_token_scale(x_train)
+    return model
+
+
 def run_job(job: dict) -> dict:
     import numpy as np
     import torch
 
     torch.set_num_threads(1)
     from qkanfwp import data
-    from qkanfwp.models import ARHQKAN, FWPConfig, GatedFWP, LSTMBaseline, count_parameters
+    from qkanfwp.models import count_parameters
     from qkanfwp.train import fit
 
     spec = resolve(job["variant"])
@@ -189,18 +255,7 @@ def run_job(job: dict) -> dict:
 
     torch.manual_seed(job["seed"])
     np.random.seed(job["seed"])
-    kind = spec.get("kind", "fwp")
-    if kind == "fwp":
-        model = GatedFWP(FWPConfig(max_len=job["window"], **spec["model"]))
-        model.fit_token_scale(x[tr])
-    elif kind == "ar":
-        model = ARHQKAN(**spec["model"])
-        model.fit_token_scale(x[tr])
-    elif kind == "lstm":
-        model = LSTMBaseline(**spec["model"])
-        model.fit_token_scale(x[tr])
-    else:
-        raise ValueError(kind)
+    model = build_model(spec, job["window"], x[tr])
 
     train_kw = dict(epochs=job["epochs"], batch_size=4, lr=1e-3, seed=job["seed"], eval_every=5)
     train_kw.update(spec.get("train", {}))

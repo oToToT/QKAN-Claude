@@ -59,7 +59,10 @@ class FWPConfig:
     fast_out: int = 2
     fast_reps: int = 1
     # memory rule
-    gate: str = "scalar"  # 'none' (additive, Eq. 2) | 'scalar' (Eq. 3) | 'group'
+    # 'none' (additive, Eq. 2) | 'scalar' (Eq. 3) | 'group' | 'cmg' (complementary
+    # matrix gate of arXiv:2607.27945: one gate per fast weight, logits = rank-one
+    # outer product of two slow-programmer heads)
+    gate: str = "scalar"
     gate_groups: str = "edge"  # used when gate == 'group': 'node' | 'edge' | 'layer' | 'param'
     gate_init: str = "default"  # 'default' | 'chrono'
     max_len: int = 16  # longest memory time-scale for chrono init
@@ -146,9 +149,14 @@ class Tokenizer(nn.Module):
     """
 
     def __init__(self, d_in: int = 1, context: int = 1, mode: str = "lags", stride: int = 1,
-                 dtype: str = "float32"):
+                 dtype: str = "float32", keep_dtype: bool = False, pad: str = "replicate"):
         super().__init__()
         self.d_in, self.context, self.mode, self.stride = d_in, context, mode, stride
+        self.keep_dtype = keep_dtype  # return tokens in the working precision instead of float32
+        # 'replicate': the patch of an early step is filled with the first value.
+        # 'truncate' : (diff mode) differences that would reach before the window
+        #              are set to zero, i.e. token_t holds orders 0..t only.
+        self.pad = pad
         # High-order differences of a smooth series cancel many leading digits
         # (in float32 the 6th difference of the Bessel series is ~90 % rounding
         # noise), so they can be formed in float64 when the input is float64.
@@ -174,10 +182,17 @@ class Tokenizer(nn.Module):
             x = xp.unfold(1, self.context, 1).reshape(x.shape[0], x.shape[1], -1)
             if self.mode == "diff":
                 x = (x @ self.diff_matrix.T.to(x.dtype)) / self.scale.to(x.dtype)
+                if self.pad == "truncate":
+                    x = x * self._known(x.shape[1], x.device).to(x.dtype)
         if self.stride > 1:
             start = (x.shape[1] - 1) % self.stride
             x = x[:, start :: self.stride]
-        return x.float()
+        return x if self.keep_dtype else x.float()
+
+    def _known(self, length: int, device) -> torch.Tensor:
+        """(T, context) mask: difference order k of token t is known iff k <= t."""
+        t = torch.arange(length, device=device)[:, None]
+        return torch.arange(self.context, device=device)[None, :] <= t
 
     @torch.no_grad()
     def fit_scale(self, x_train: torch.Tensor) -> None:
@@ -186,7 +201,16 @@ class Tokenizer(nn.Module):
         if self.mode != "diff" or self.context == 1:
             return
         self.scale.fill_(1.0)
-        std = self(x_train).reshape(-1, self.context).std(0).clamp_min(1e-8)
+        tok = self(x_train)
+        if self.pad == "truncate" and self.stride == 1:
+            # statistics over the known entries only
+            known = self._known(tok.shape[1], tok.device).to(tok.dtype)
+            n = (known.sum(0) * tok.shape[0]).clamp_min(1.0)
+            mean = (tok * known).sum((0, 1)) / n
+            var = (((tok - mean) ** 2) * known).sum((0, 1)) / (n - 1).clamp_min(1.0)
+            std = var.sqrt().clamp_min(1e-8)
+        else:
+            std = tok.reshape(-1, self.context).std(0).clamp_min(1e-8)
         std[0] = 1.0
         self.scale.copy_(std)
 
@@ -299,6 +323,14 @@ class GatedFWP(nn.Module):
                 raise ValueError(cfg.gate_groups)
             group_index = torch.unique(group_index, return_inverse=True)[1]
             self.n_gates = int(group_index.max()) + 1
+        elif cfg.gate == "cmg":
+            # Fast state reshaped to P x Q = (circuits) x (angles per circuit);
+            # the slow programmer emits m^P (P values) and m^Q (Q values) and
+            # the gate of weight (p, q) is sigmoid(m^P_p m^Q_q).
+            assert cfg.fast == "hqkan", "CMG is implemented for the HQKAN fast programmer"
+            self.cmg_shape = (cfg.fast_out * cfg.fast_in, (cfg.fast_reps + 1) * 2)
+            self.n_gates = sum(self.cmg_shape)
+            group_index = None
         else:
             raise ValueError(cfg.gate)
         self.register_buffer("group_index", group_index, persistent=False)
@@ -314,7 +346,7 @@ class GatedFWP(nn.Module):
         else:
             raise ValueError(cfg.slow)
 
-        if self.n_gates and cfg.gate_init == "chrono":
+        if self.n_gates and cfg.gate_init == "chrono" and cfg.gate != "cmg":
             # memory time-scale tau -> retention g = 1 - 1/tau -> bias logit(g)
             hi = max(float(cfg.max_len) / cfg.stride, 2.0)
             if self.n_gates == 1:
@@ -335,6 +367,9 @@ class GatedFWP(nn.Module):
         """Slow-programmer output -> (proposal for all fast weights, gate logits)."""
         cfg = self.cfg
         raw, gate = out[..., : self.n_slow_out], out[..., self.n_slow_out :]
+        if cfg.gate == "cmg":
+            p = self.cmg_shape[0]
+            gate = (gate[..., :p, None] * gate[..., None, p:]).flatten(-2)  # one logit per fast weight
         if cfg.fast == "linear":
             d_tok = cfg.d_in * cfg.context
             lvec = raw[..., :d_tok]
@@ -374,6 +409,9 @@ class GatedFWP(nn.Module):
         a, c = self.slow.dec.weight[:n], self.slow.dec.bias[:n]
         if self.n_gates == 0:
             return z.sum(1) @ a.T + c * z.shape[1]
+        if self.cfg.gate == "cmg":  # per-weight gates: no latent-space shortcut
+            proposals, gate = self.split_slow(self.slow.dec(z))
+            return gated_aggregate(proposals, gate)
         logits = z @ self.slow.dec.weight[n:].T + self.slow.dec.bias[n:]
         log_g = F.logsigmoid(logits)
         suffix = log_g.sum(1, keepdim=True) - log_g.cumsum(1)

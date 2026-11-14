@@ -27,28 +27,28 @@ from torch import nn
 
 INV_SQRT2 = 1.0 / math.sqrt(2.0)
 
+# Finite-shot simulation (experiments/shot_noise.py).  ``None`` = exact
+# expectation values.  With ``S`` shots every measured Pauli expectation ``v``
+# gets Gaussian noise of variance ``(1 - v^2) / S`` (binomial statistics of a
+# +-1 outcome).  Only the physical read-outs are affected; qkan's
+# ``fast_measure`` quantity |a| - |b| is not an expectation value.
+_SHOTS: float | None = None
 
-def daruan_pz(
-    x: torch.Tensor,
-    theta: torch.Tensor,
-    preact_w: torch.Tensor | None = None,
-    preact_b: torch.Tensor | None = None,
-    fast_measure: bool = True,
-) -> torch.Tensor:
-    """Evaluate all edge activations of one QKAN layer.
 
-    Args:
-        x: ``(*batch, in_dim)`` real inputs.
-        theta: ``(out, in, reps + 1, 2)`` shared angles, or
-            ``(*batch, out, in, reps + 1, 2)`` per-sample ("fast") angles.
-        preact_w, preact_b: optional ``(out, in, reps)`` trainable frequency /
-            phase of the data-encoding gate.  ``None`` means ``RZ(x)``.
-        fast_measure: ``True`` -> ``|a| - |b|`` (qkan default, "quantum
-            inspired"); ``False`` -> ``|a|^2 - |b|^2`` (physical <Z>).
+def set_shots(shots: float | None) -> None:
+    global _SHOTS
+    _SHOTS = shots
 
-    Returns:
-        ``(*batch, out, in)`` activations.
-    """
+
+def _measure(v: torch.Tensor) -> torch.Tensor:
+    if _SHOTS is None:
+        return v
+    return v + torch.randn_like(v) * torch.sqrt((1.0 - v.detach() ** 2).clamp_min(0.0) / _SHOTS)
+
+
+def _pz_amplitudes(x, theta, preact_w=None, preact_b=None):
+    """Final amplitudes ``(a, b)`` of every ``pz_encoding`` circuit, each of
+    shape ``(*batch, out, in)`` (complex)."""
     reps = theta.shape[-2] - 1
     xe = x.unsqueeze(-2)  # (*batch, 1, in)
 
@@ -82,9 +82,53 @@ def daruan_pz(
             d = torch.polar(torch.ones_like(enc), -0.5 * enc)
             a = a * d
             b = b * torch.conj(d)
+    return a, b
+
+
+def daruan_pz(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preact_w: torch.Tensor | None = None,
+    preact_b: torch.Tensor | None = None,
+    fast_measure: bool = True,
+) -> torch.Tensor:
+    """Evaluate all edge activations of one QKAN layer.
+
+    Args:
+        x: ``(*batch, in_dim)`` real inputs.
+        theta: ``(out, in, reps + 1, 2)`` shared angles, or
+            ``(*batch, out, in, reps + 1, 2)`` per-sample ("fast") angles.
+        preact_w, preact_b: optional ``(out, in, reps)`` trainable frequency /
+            phase of the data-encoding gate.  ``None`` means ``RZ(x)``.
+        fast_measure: ``True`` -> ``|a| - |b|`` (qkan default, "quantum
+            inspired"); ``False`` -> ``|a|^2 - |b|^2`` (physical <Z>).
+
+    Returns:
+        ``(*batch, out, in)`` activations.
+    """
+    a, b = _pz_amplitudes(x, theta, preact_w, preact_b)
     if fast_measure:
         return a.abs() - b.abs()
-    return a.real**2 + a.imag**2 - b.real**2 - b.imag**2
+    return _measure(a.real**2 + a.imag**2 - b.real**2 - b.imag**2)
+
+
+def daruan_bloch(
+    x: torch.Tensor,
+    theta: torch.Tensor,
+    preact_w: torch.Tensor | None = None,
+    preact_b: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Bloch vector ``(<X>, <Y>, <Z>)`` of the output state of every DARUAN
+    circuit: ``(*batch, out, in, 3)``.
+
+    The expectation of any single-qubit observable ``O = r0 I + r . sigma`` on
+    the same circuit is ``r0 + r . bloch``, i.e. *linear* in the observable.
+    ``bloch[..., 2]`` equals ``daruan_pz(..., fast_measure=False)``.
+    """
+    a, b = _pz_amplitudes(x, theta, preact_w, preact_b)
+    ab = torch.conj(a) * b
+    z = a.real**2 + a.imag**2 - b.real**2 - b.imag**2
+    return _measure(torch.stack([2.0 * ab.real, 2.0 * ab.imag, z], -1))
 
 
 def theta_size(in_dim: int, out_dim: int, reps: int) -> int:

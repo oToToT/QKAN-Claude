@@ -70,6 +70,30 @@ VARIANTS = {
     "lstm_s": dict(kind="lstm", model=dict(hidden=64)),
 }
 
+# Observable-memory FWP (qkanfwp/obsmem.py) for direct multi-step forecasting:
+# token = the last 11 yearly means; the pair written for month t is (token_t,
+# the 132 months that followed t minus the smoothed previous cycle), for every
+# third month t whose 132 successors lie inside the 528-month window (89 pairs).
+OM = dict(context=11, pool=12, hidden=6, reps=1, d_out=HORIZON, anchor="cycle", out_basis=16,
+          pair_stride=3, max_len=89, prior_init=1e-2)
+OM_TRAIN = dict(grad_clip=1.0)
+VARIANTS.update({
+    "om": dict(kind="om", model=OM, train=OM_TRAIN),
+    "om_static": dict(kind="om", model={**OM, "memory": "none"}, train=OM_TRAIN),  # no fast weights
+    "om_gnone": dict(kind="om", model={**OM, "gate": "none"}, train=OM_TRAIN),  # ungated statistics
+    "om_classical": dict(kind="om", model={**OM, "quantum": False}, train=OM_TRAIN),  # no Bloch features
+    "om_last": dict(kind="om", model={**OM, "anchor": "last"}, train=OM_TRAIN),  # anchor = last value
+    "om_b8": dict(kind="om", model={**OM, "out_basis": 8}, train=OM_TRAIN),
+    "om_b24": dict(kind="om", model={**OM, "out_basis": 24}, train=OM_TRAIN),
+    "om_h4": dict(kind="om", model={**OM, "hidden": 4}, train=OM_TRAIN),
+    "om_h10": dict(kind="om", model={**OM, "hidden": 10}, train=OM_TRAIN),
+    "om_c6": dict(kind="om", model={**OM, "context": 6}, train=OM_TRAIN),
+    "om_c22p6": dict(kind="om", model={**OM, "context": 22, "pool": 6}, train=OM_TRAIN),
+    "om_p1": dict(kind="om", model={**OM, "prior_init": 1e-1}, train=OM_TRAIN),
+    "om_p4": dict(kind="om", model={**OM, "prior_init": 1e-4}, train=OM_TRAIN),
+    "om_s1": dict(kind="om", model={**OM, "pair_stride": 1, "max_len": 265}, train=OM_TRAIN),
+})
+
 
 def resolve(name: str) -> dict:
     """``"<variant>@cos5"`` / ``"<variant>@lr5"``: cosine schedule from (or a
@@ -90,9 +114,12 @@ def build(spec):
     from torch import nn
 
     from qkanfwp.models import FWPConfig, GatedFWP
+    from qkanfwp.obsmem import ObservableMemoryFWP, ObsMemConfig
 
     if spec.get("kind", "fwp") == "fwp":
         return GatedFWP(FWPConfig(**spec["model"]))
+    if spec["kind"] == "om":
+        return ObservableMemoryFWP(ObsMemConfig(**spec["model"]))
 
     class LSTMForecaster(nn.Module):
         def __init__(self, hidden):
@@ -126,6 +153,8 @@ def run_job(job: dict) -> dict:
     torch.manual_seed(job["seed"])
     np.random.seed(job["seed"])
     model = build(spec)
+    if spec.get("kind") == "om":
+        model.fit_token_scale(x[tr])  # scale of the in-context regression targets (training windows only)
     tkw = dict(lr=job["lr"], schedule="constant")
     tkw.update(spec.get("train", {}))
     alpha = 1.0
@@ -163,6 +192,8 @@ def run_job(job: dict) -> dict:
             loss = peak_loss(model(x[idx]), y[idx])
             opt.zero_grad(set_to_none=True)
             loss.backward()
+            if tkw.get("grad_clip"):
+                torch.nn.utils.clip_grad_norm_(model.parameters(), tkw["grad_clip"])
             opt.step()
             if sched is not None:
                 sched.step()
