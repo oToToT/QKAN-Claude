@@ -328,7 +328,10 @@ def family_part(out):
         if not rat:
             return
         r = gmean(rat)
-        word = f"**{big(1 / r)}× lower**" if r < 1 else f"{big(r)}× higher"
+        if 0.95 < r < 1.05:
+            word = f"equal ({r:.2f}×)"
+        else:
+            word = f"**{big(1 / r)}× lower**" if r < 1 else f"{big(r)}× higher"
         out.append(f"| {label} | {par} | {word} | {sum(x < 1 for x in rat)}/{len(rat)} | {big(1 / max(rat))}× … {big(1 / min(rat))}× |")
 
     for v, lab in models:

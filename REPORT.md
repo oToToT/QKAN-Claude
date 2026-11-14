@@ -44,8 +44,8 @@
    平滑序列用約十個 context 配對。
 2. **論文型態的記憶（由 slow programmer 產生旋轉角）在這些 benchmark 上沒有幫助**：沒有 fast weights 的 HQKAN-Δ
    在每一格都比 QKAN-FWP+ 好（15 個 seed 合計 2.5 倍），也比給了相同 token 的 CMG 好。有用的是記憶的型態，不是有沒有記憶。
-3. **在每條序列物理參數都不同的系統族上**（第 6 節：模型必須從 16 步的視窗辨識系統），QKAN-FWP-O 在 10 格中的 9 格最低、
-   1 格打平：沒有雜訊時比其他神經模型低 15 倍到 2 萬倍，有雜訊時低 1.1–2.3 倍；在非線性的 Hénon map 上比兩條線性參考線低
+3. **在每條序列物理參數都不同的系統族上**（第 6 節：模型必須從 16 步的視窗辨識系統），QKAN-FWP-O 在 10 格中的 9 格比其他架構
+   （GQKAN-QKANFWP、CMG、QKAN-FWP+、HQKAN-Δ、LSTM）低、1 格打平：沒有雜訊時低 15 倍到 2 萬倍，有雜訊時低 1.1–2.3 倍；在非線性的 Hénon map 上比兩條線性參考線低
    30–1300 倍，在有雜訊的線性族上與「在視窗內擬合 ridge AR」的 oracle 相當或更好。
 4. **太陽黑子**（第 8 節）：QKAN-FWP-O 的參數化以約 500 個參數（論文模型的 4%）在三種 split 上都得到比 baseline 低 19–25% 的 MSE
    （validation 與 test 一致）；這個收益不是來自記憶。
@@ -55,8 +55,10 @@
 1. **六個 benchmark 幾乎是線性問題。** 一個 9 參數的線性 AR(8)（最小平方，不需要訓練）在大多數格子贏過兩篇論文印出的
    最佳數字，也贏過 QKAN-FWP+ 與 HQKAN-Δ；QKAN-FWP-O 只在 NARMA 與 DQC 上低於它（5.2 節）。QKAN-FWP-O 對其他神經模型的
    巨大差距，主要是「在 context 內直接解最小平方」對「用 SGD 逼近線性映射」的差距。
-2. **量子電路的特徵只在非線性系統上有貢獻。** 在論文的 benchmark 與線性的系統族上，只留線性項的古典對照組和完整模型差不多
-   （無雜訊的線性族上甚至更準）；在 Hénon map 上拿掉 Bloch 特徵則差 22–1164 倍（5.4、6 節）。整個模型可以古典模擬，不主張量子優勢。
+2. **起作用的是閉迴路的記憶，不是量子電路。** 把 Bloch 特徵換成同樣數目的古典 tanh 特徵、記憶與求解完全不變，結果沒有差別
+   （系統族上幾何平均 1.0 倍；5.4、6 節）。非線性系統需要某種非線性特徵（只留線性項在 Hénon map 上差 22–1164 倍），
+   但 Bloch 向量沒有比古典特徵更好的歸納偏置。整個模型可以古典模擬，不主張量子優勢。這個結果對 QKAN-FWP 的意義是：
+   fast weights 應該放在讀出為線性的量測算符空間，而不是旋轉角。
 3. **沒有重現論文印出的 baseline 數字。** 重新實作的 GQKAN-QKANFWP 在論文協定下比論文印出的數字差 21 倍（幾何平均），
    調過 lr 後差 1.9 倍；原因沒有找到（5.3 節）。所有「低幾倍」的結論都是同一個 pipeline 內的比較。
 4. **In-context 最小平方不是新方法**（ALPaCA、R2D2、mesa-layer、delta rule）。本報告的貢獻是指出 QKAN 層對量測算符是線性的，
@@ -518,6 +520,9 @@ last-cycle anchor），取視窗內後繼 132 個月都已知的每第三個月�
 | one prior precision instead of one per feature | 106–130 | **1×** | 9/20 | 0.99× | 0.98× | 0.98× | 1.2× | 0.9× | – |
 | no base-activation (linear) term: Bloch features only | 112–136 | **4.7×** | 18/20 | 3.8× | 25× | 1.8× | 3.2× | 4.2× | – |
 | no Bloch features: linear term only (classical control) | 52–76 | **1.1×** | 14/24 | 0.5× | 3.2× | 1.6× | 1.4× | 2.2× | 0.18× |
+| classical tanh(w·u + b) features instead of the Bloch features, same memory | 166 | **0.74×** | 0/2 | 0.75× | 0.73× | – | – | – | – |
+| classical cos(w·u + b) features instead of the Bloch features, same memory | 166 | **0.83×** | 0/2 | 0.88× | 0.78× | – | – | – | – |
+| float32 instead of float64 (features, statistics and solve) | 154 | **1.1×** | 2/3 | 1× | 0.98× | 1.5× | – | – | – |
 | 4 circuits instead of 6 | 88–104 | **1.7×** | 18/20 | 1.3× | 3.6× | 1.1× | 1.6× | 1.7× | – |
 | fixed token length 6 instead of min(8, N/2) | 142 | **1.9×** | 13/20 | 0.72× | 1.4× | 5.3× | 1.2× | 3.9× | – |
 
@@ -673,10 +678,12 @@ Mean ± std over 3 seeds at the learning rate chosen on validation (one of 3e-3,
 | GQKAN-QKANFWP (scalar gate) | 152 | 1.64e-02 ± 2.8e-04 | 1.47e-02 ± 6.1e-05 | 6.77e-03 ± 1.3e-04 | 1.70e-03 ± 1.0e-03 | 1.62e-04 ± 8.2e-06 | 1.77e-02 ± 7.8e-05 | 1.60e-02 ± 1.2e-04 | 8.18e-03 ± 2.5e-05 | 3.47e-03 ± 8.6e-04 | 1.51e-03 ± 3.5e-05 |
 | CMG (scalar tokens) | 188 | 4.83e-03 ± 2.9e-03 | 1.07e-02 ± 1.6e-03 | 6.27e-03 ± 9.8e-04 | 5.07e-04 ± 5.6e-05 | 3.10e-04 ± 6.9e-05 | 6.25e-03 ± 2.8e-03 | 1.36e-02 ± 7.1e-04 | 7.72e-03 ± 8.5e-04 | 2.33e-03 ± 1.6e-04 | 1.56e-03 ± 6.3e-05 |
 | CMG + Δ-tokens + residual | 173 | 4.72e-05 ± 2.8e-06 | 1.04e-04 ± 1.8e-05 | 2.77e-05 ± 1.4e-06 | 6.04e-04 ± 1.4e-04 | 3.40e-06 ± 1.4e-06 | 1.64e-03 ± 3.9e-05 | 5.26e-03 ± 1.2e-04 | 3.68e-03 ± 1.1e-04 | 1.86e-03 ± 9.0e-05 | 9.75e-04 ± 2.7e-05 |
-| QKAN-FWP+ | 149 | 4.87e-05 ± 2.1e-05 | 9.73e-05 ± 1.8e-05 | 2.72e-05 ± 4.3e-06 | 9.35e-04 ± 5.5e-04 | 4.23e-06 ± 1.0e-06 | 1.75e-03 ± 2.8e-04 | 4.78e-03 ± 3.6e-04 | 3.58e-03 ± 1.1e-04 | **1.76e-03 ± 1.6e-04** | 1.11e-03 ± 3.2e-05 |
+| QKAN-FWP+ | 149 | 4.87e-05 ± 2.1e-05 | 9.73e-05 ± 1.8e-05 | 2.72e-05 ± 4.3e-06 | 9.35e-04 ± 5.5e-04 | 4.23e-06 ± 1.0e-06 | 1.75e-03 ± 2.8e-04 | 4.78e-03 ± 3.6e-04 | 3.58e-03 ± 1.1e-04 | 1.76e-03 ± 1.6e-04 | 1.11e-03 ± 3.2e-05 |
 | HQKAN-Δ (static) | 136 | 9.83e-05 ± 1.2e-05 | 1.18e-04 ± 1.6e-05 | 2.78e-05 ± 1.2e-06 | 1.48e-03 ± 1.5e-04 | 3.49e-06 ± 2.7e-06 | 3.38e-03 ± 1.8e-04 | 5.94e-03 ± 2.9e-05 | 4.31e-03 ± 3.8e-05 | 2.86e-03 ± 5.3e-05 | 1.21e-03 ± 2.2e-05 |
 | LSTM, same tokens (not QKAN) | 160 | 4.03e-05 ± 5.6e-06 | 7.71e-05 ± 6.4e-06 | 1.89e-05 ± 1.9e-06 | 9.27e-04 ± 3.7e-04 | 2.52e-06 ± 2.9e-07 | 1.91e-03 ± 5.2e-04 | 4.57e-03 ± 1.3e-04 | 3.31e-03 ± 1.5e-05 | 2.80e-03 ± 8.4e-05 | 1.05e-03 ± 3.1e-05 |
-| QKAN-FWP-O | 154 | **2.29e-09 ± 2.1e-09** | **4.40e-08 ± 1.4e-08** | **2.00e-07 ± 8.4e-08** | **3.42e-05 ± 4.9e-06** | **1.54e-07 ± 3.5e-08** | **9.05e-04 ± 9.2e-06** | **1.97e-03 ± 2.6e-05** | **2.87e-03 ± 1.7e-05** | 1.79e-03 ± 4.4e-05 | **8.67e-04 ± 3.4e-06** |
+| Same memory on classical tanh features (not QKAN) | 166 | 2.84e-09 ± 1.8e-09 | **3.36e-08 ± 5.4e-09** | **1.74e-07 ± 6.7e-08** | 3.53e-05 ± 1.3e-05 | 1.67e-07 ± 5.6e-08 | 1.05e-03 ± 3.0e-05 | 2.02e-03 ± 1.4e-05 | 2.85e-03 ± 5.6e-06 | 1.58e-03 ± 8.7e-05 | 9.01e-04 ± 3.7e-05 |
+| Same memory on classical cos features (not QKAN) | 166 | 1.01e-08 ± 8.8e-09 | 1.11e-06 ± 1.4e-06 | 2.33e-07 ± 7.6e-08 | **2.35e-05 ± 6.0e-06** | 1.79e-07 ± 9.4e-08 | **8.85e-04 ± 2.5e-05** | 1.99e-03 ± 3.2e-05 | **2.83e-03 ± 1.7e-05** | **1.56e-03 ± 4.3e-05** | **8.59e-04 ± 1.4e-05** |
+| QKAN-FWP-O | 154 | **2.29e-09 ± 2.1e-09** | 4.40e-08 ± 1.4e-08 | 2.00e-07 ± 8.4e-08 | 3.42e-05 ± 4.9e-06 | **1.54e-07 ± 3.5e-08** | 9.05e-04 ± 9.2e-06 | **1.97e-03 ± 2.6e-05** | 2.87e-03 ± 1.7e-05 | 1.79e-03 ± 4.4e-05 | 8.67e-04 ± 3.4e-06 |
 
 | Compared with | Params | Geo-mean test MSE of QKAN-FWP-O | Cells where it is lower | Smallest … largest factor |
 |---|---|---|---|---|
@@ -686,12 +693,17 @@ Mean ± std over 3 seeds at the learning rate chosen on validation (one of 3e-3,
 | QKAN-FWP+ | 149 | **23× lower** | 9/10 | 0.98× … 2.1e4× |
 | HQKAN-Δ (static) | 136 | **30× lower** | 10/10 | 1.4× … 4.3e4× |
 | LSTM, same tokens (not QKAN) | 160 | **21× lower** | 10/10 | 1.2× … 1.8e4× |
+| Same memory on classical tanh features (not QKAN) | 166 | equal (1.00×) | 6/10 | 0.76× … 1.2× |
+| Same memory on classical cos features (not QKAN) | 166 | **1.6× lower** | 5/10 | 0.69× … 25× |
 | *one linear AR(p) for all sequences* | – | **5.8× lower** | 9/10 | 0.067× … 1345× |
 | *ridge AR(q) fitted inside each window* | – | 87× higher | 6/10 | 2e-17× … 1752× |
 
-- **沒有雜訊時**，QKAN-FWP-O 在五個族都是最低的神經模型，比其餘最好的模型低 15 倍（Hénon、Duffing）到 2 萬倍（阻尼振盪）。
+表中倒數第二、三列是 QKAN-FWP-O 的對照組：把 Bloch 特徵換成同樣數目的古典特徵 $\tanh(wu+b)$ 或 $\cos(wu+b)$
+（每個 hidden unit 三個、$w, b$ 可訓練；166 個參數），**記憶與求解完全相同**。下面先和其他架構比，再看這兩個對照組。
+
+- **沒有雜訊時**，QKAN-FWP-O 在五個族都比其他架構低，比其餘最好的架構低 15 倍（Hénon、Duffing）到 2 萬倍（阻尼振盪）。
   其他模型彼此差不多：有記憶的 QKAN-FWP+、CMG、LSTM 和沒有記憶的 HQKAN-Δ 在同一個量級，開迴路的記憶最多帶來 2–3 倍。
-- **有雜訊時**差距縮小（不可約的誤差約為雜訊變異數 4e-4）：QKAN-FWP-O 在四個族最低（比次佳的模型低 1.1–2.3 倍），
+- **有雜訊時**差距縮小（不可約的誤差約為雜訊變異數 4e-4）：QKAN-FWP-O 在四個族比其他架構低（比次佳的低 1.1–2.3 倍），
   在 Hénon 上和 QKAN-FWP+ 打平。
 - **對線性參考線**：
   - 「所有序列共用一個線性 AR」在 10 格中輸 9 格（只在無雜訊的 Jaynes–Cummings 上較好）。
@@ -699,6 +711,11 @@ Mean ± std over 3 seeds at the learning rate chosen on validation (one of 3e-3,
     有雜訊時 QKAN-FWP-O 在阻尼振盪上是它的 1.2 倍，在 two tones、Jaynes–Cummings、Duffing 上比它低（1.97e-3 對 2.51e-3、
     2.87e-3 對 4.05e-3、8.67e-4 對 9.34e-4）——學到的先驗與特徵比現場選階數的 ridge 更有效率。
   - 在非線性的 Hénon map 上兩條線性參考線都失效（約 5e-2），QKAN-FWP-O 是 3.4e-5（無雜訊）與 1.8e-3（有雜訊）。
+- **同一個記憶配上古典特徵，結果相同。** tanh 特徵的對照組和 QKAN-FWP-O 在 10 格的幾何平均是 1.0 倍，每一格都在 seed 的標準差
+  之內或附近；cos 特徵的對照組在 Hénon 上略好（0.69 倍與 0.87 倍）、在無雜訊的 two tones 與阻尼振盪上較差（有 seed 沒有收斂好），
+  整體 1.6 倍。所以：非線性系統需要**某種**非線性特徵（只留線性項會失敗，見下），但 Bloch 向量並沒有比一般的古典特徵更好的歸納偏置。
+  起作用的是閉迴路的記憶，不是量子電路。對 QKAN-FWP 這條線，這個結果的意義是：如果要用 QKAN 做 fast-weight programmer，
+  fast weights 應該放在讀出為線性的量測算符空間，而不是旋轉角；它不是「量子特徵比較好」的證據。
 
 消融（test MSE ÷ 完整模型）：
 
@@ -708,15 +725,20 @@ Mean ± std over 3 seeds at the learning rate chosen on validation (one of 3e-3,
 | sequential delta rule instead of the least-squares solve | 154 | **7.4×** | 1149× | 508× | 21× | 4.1× | 4.2× | 1.2× | 1.8× | 1.2× | 0.93× | 1.1× |
 | no gate (additive statistics, uniform weights) | 128 | **1.5×** | 0.41× | 0.67× | 0.57× | 1.4× | 1.3× | 3.5× | 3× | 2.4× | 3.1× | 2.7× |
 | no Bloch features: linear term only (classical control) | 76 | **1.1×** | 0.012× | 0.046× | 0.056× | 1164× | 2.4× | 0.97× | 1.1× | 1× | 22× | 1× |
+| classical tanh(w·u + b) features instead of the Bloch features, same memory | 166 | **1×** | 1.2× | 0.76× | 0.87× | 1× | 1.1× | 1.2× | 1× | 1× | 0.88× | 1× |
+| classical cos(w·u + b) features instead of the Bloch features, same memory | 166 | **1.6×** | 4.4× | 25× | 1.2× | 0.69× | 1.2× | 0.98× | 1× | 0.99× | 0.87× | 0.99× |
+| float32 instead of float64 (features, statistics and solve) | 154 | **1×** | 1.4× | 1.1× | 0.92× | 1.1× | 0.97× | 0.99× | 1× | 1× | 0.99× | 1× |
 
 - **拿掉 fast weights**：無雜訊時差 5 倍到 2.6 萬倍，有雜訊時差 1.4–3.8 倍。
 - **Delta rule 取代最小平方求解**：無雜訊時差 4–1100 倍；有雜訊時幾乎沒有差別（0.93–1.8 倍）。封閉形式求解的價值在高精度的情形；
   當誤差由雜訊主導時，一次通過的誤差驅動更新就夠了——重點是寫入要看誤差。
 - **不用 gate**：無雜訊時反而略好（線性族 0.4–0.7 倍），有雜訊時差 2.4–3.5 倍。Gate 在這裡的作用是調整證據相對於先驗的總權重
   （$\sum_t\beta_t < 1$）以及各個 token 的權重；沒有 gate 時只剩先驗精度 $\Lambda_0$ 可以調節。
-- **拿掉 Bloch 特徵（古典對照組）**：線性族上無雜訊時反而好 20–80 倍（純線性特徵可以精確表示 AR 遞迴）、有雜訊時相同；
-  **Hénon 上差 1164 倍（無雜訊）與 22 倍（有雜訊），Duffing 無雜訊時差 2.4 倍**。量子電路的特徵正是讓非線性系統能在 context 內被辨識的部分；
+- **只留線性項（拿掉所有非線性特徵）**：線性族上無雜訊時反而好 20–80 倍（純線性特徵可以精確表示 AR 遞迴）、有雜訊時相同；
+  **Hénon 上差 1164 倍（無雜訊）與 22 倍（有雜訊），Duffing 無雜訊時差 2.4 倍**。非線性特徵是讓非線性系統能在 context 內被辨識的部分；
   在線性系統上它不需要，還會稍微降低精度。
+- **Bloch 特徵換成古典的 tanh／cos 特徵**：見上，沒有差別。
+- **float32**：和 float64 沒有差別（1.0 倍）。
 
 ---
 
@@ -978,8 +1000,8 @@ For every model the learning rate is the one with the lowest validation loss amo
 - 這是**獨立的重新實作**，不是官方程式，而且**沒有重現論文印出的 baseline 數字**（5.3 節）；層的大小、取樣點數等論文
   未給的細節是在這裡選的（3.1、4.5 節），所以 time-series 的絕對 MSE 與論文表格的比較只能參考。CMG 也是依論文敘述重新實作的。
 - 六個 time-series benchmark 幾乎是線性問題（5.2 節）。在它們上面，MSE 排名主要反映「誰把一個接近線性的映射擬合得比較準」。
-- QKAN-FWP-O 的 in-context 最小平方本身是既有的做法（3.3 節）；它的量子部分可以古典模擬，在線性系統上
-  Bloch 特徵沒有貢獻（5.4、6 節）。
+- QKAN-FWP-O 的 in-context 最小平方本身是既有的做法（3.3 節）；它的量子部分可以古典模擬，而且換成同樣大小的古典 tanh 特徵
+  結果相同（5.4、6 節）。本報告沒有找到量子電路特徵帶來好處的任務。
 - 有限量測次數的影響只做了統計雜訊的模擬（第 7 節），沒有閘誤差與退相干的模型，也沒有真機實驗。在需要量子特徵的任務上，
   QKAN-FWP-O 的優勢需要每個電路約 $10^4$ 次以上的量測。
 - 論文以多 qubit VQC 為 fast programmer 的三個模型（QFWP、G-QFWP、GQKAN-QFWP）沒有重新實作。

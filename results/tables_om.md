@@ -100,6 +100,9 @@
 | one prior precision instead of one per feature | 106–130 | **1×** | 9/20 | 0.99× | 0.98× | 0.98× | 1.2× | 0.9× | – |
 | no base-activation (linear) term: Bloch features only | 112–136 | **4.7×** | 18/20 | 3.8× | 25× | 1.8× | 3.2× | 4.2× | – |
 | no Bloch features: linear term only (classical control) | 52–76 | **1.1×** | 14/24 | 0.5× | 3.2× | 1.6× | 1.4× | 2.2× | 0.18× |
+| classical tanh(w·u + b) features instead of the Bloch features, same memory | 166 | **0.74×** | 0/2 | 0.75× | 0.73× | – | – | – | – |
+| classical cos(w·u + b) features instead of the Bloch features, same memory | 166 | **0.83×** | 0/2 | 0.88× | 0.78× | – | – | – | – |
+| float32 instead of float64 (features, statistics and solve) | 154 | **1.1×** | 2/3 | 1× | 0.98× | 1.5× | – | – | – |
 | 4 circuits instead of 6 | 88–104 | **1.7×** | 18/20 | 1.3× | 3.6× | 1.1× | 1.6× | 1.7× | – |
 | fixed token length 6 instead of min(8, N/2) | 142 | **1.9×** | 13/20 | 0.72× | 1.4× | 5.3× | 1.2× | 3.9× | – |
 
@@ -140,10 +143,12 @@ Mean ± std over 3 seeds at the learning rate chosen on validation (one of 3e-3,
 | GQKAN-QKANFWP (scalar gate) | 152 | 1.64e-02 ± 2.8e-04 | 1.47e-02 ± 6.1e-05 | 6.77e-03 ± 1.3e-04 | 1.70e-03 ± 1.0e-03 | 1.62e-04 ± 8.2e-06 | 1.77e-02 ± 7.8e-05 | 1.60e-02 ± 1.2e-04 | 8.18e-03 ± 2.5e-05 | 3.47e-03 ± 8.6e-04 | 1.51e-03 ± 3.5e-05 |
 | CMG (scalar tokens) | 188 | 4.83e-03 ± 2.9e-03 | 1.07e-02 ± 1.6e-03 | 6.27e-03 ± 9.8e-04 | 5.07e-04 ± 5.6e-05 | 3.10e-04 ± 6.9e-05 | 6.25e-03 ± 2.8e-03 | 1.36e-02 ± 7.1e-04 | 7.72e-03 ± 8.5e-04 | 2.33e-03 ± 1.6e-04 | 1.56e-03 ± 6.3e-05 |
 | CMG + Δ-tokens + residual | 173 | 4.72e-05 ± 2.8e-06 | 1.04e-04 ± 1.8e-05 | 2.77e-05 ± 1.4e-06 | 6.04e-04 ± 1.4e-04 | 3.40e-06 ± 1.4e-06 | 1.64e-03 ± 3.9e-05 | 5.26e-03 ± 1.2e-04 | 3.68e-03 ± 1.1e-04 | 1.86e-03 ± 9.0e-05 | 9.75e-04 ± 2.7e-05 |
-| QKAN-FWP+ | 149 | 4.87e-05 ± 2.1e-05 | 9.73e-05 ± 1.8e-05 | 2.72e-05 ± 4.3e-06 | 9.35e-04 ± 5.5e-04 | 4.23e-06 ± 1.0e-06 | 1.75e-03 ± 2.8e-04 | 4.78e-03 ± 3.6e-04 | 3.58e-03 ± 1.1e-04 | **1.76e-03 ± 1.6e-04** | 1.11e-03 ± 3.2e-05 |
+| QKAN-FWP+ | 149 | 4.87e-05 ± 2.1e-05 | 9.73e-05 ± 1.8e-05 | 2.72e-05 ± 4.3e-06 | 9.35e-04 ± 5.5e-04 | 4.23e-06 ± 1.0e-06 | 1.75e-03 ± 2.8e-04 | 4.78e-03 ± 3.6e-04 | 3.58e-03 ± 1.1e-04 | 1.76e-03 ± 1.6e-04 | 1.11e-03 ± 3.2e-05 |
 | HQKAN-Δ (static) | 136 | 9.83e-05 ± 1.2e-05 | 1.18e-04 ± 1.6e-05 | 2.78e-05 ± 1.2e-06 | 1.48e-03 ± 1.5e-04 | 3.49e-06 ± 2.7e-06 | 3.38e-03 ± 1.8e-04 | 5.94e-03 ± 2.9e-05 | 4.31e-03 ± 3.8e-05 | 2.86e-03 ± 5.3e-05 | 1.21e-03 ± 2.2e-05 |
 | LSTM, same tokens (not QKAN) | 160 | 4.03e-05 ± 5.6e-06 | 7.71e-05 ± 6.4e-06 | 1.89e-05 ± 1.9e-06 | 9.27e-04 ± 3.7e-04 | 2.52e-06 ± 2.9e-07 | 1.91e-03 ± 5.2e-04 | 4.57e-03 ± 1.3e-04 | 3.31e-03 ± 1.5e-05 | 2.80e-03 ± 8.4e-05 | 1.05e-03 ± 3.1e-05 |
-| QKAN-FWP-O | 154 | **2.29e-09 ± 2.1e-09** | **4.40e-08 ± 1.4e-08** | **2.00e-07 ± 8.4e-08** | **3.42e-05 ± 4.9e-06** | **1.54e-07 ± 3.5e-08** | **9.05e-04 ± 9.2e-06** | **1.97e-03 ± 2.6e-05** | **2.87e-03 ± 1.7e-05** | 1.79e-03 ± 4.4e-05 | **8.67e-04 ± 3.4e-06** |
+| Same memory on classical tanh features (not QKAN) | 166 | 2.84e-09 ± 1.8e-09 | **3.36e-08 ± 5.4e-09** | **1.74e-07 ± 6.7e-08** | 3.53e-05 ± 1.3e-05 | 1.67e-07 ± 5.6e-08 | 1.05e-03 ± 3.0e-05 | 2.02e-03 ± 1.4e-05 | 2.85e-03 ± 5.6e-06 | 1.58e-03 ± 8.7e-05 | 9.01e-04 ± 3.7e-05 |
+| Same memory on classical cos features (not QKAN) | 166 | 1.01e-08 ± 8.8e-09 | 1.11e-06 ± 1.4e-06 | 2.33e-07 ± 7.6e-08 | **2.35e-05 ± 6.0e-06** | 1.79e-07 ± 9.4e-08 | **8.85e-04 ± 2.5e-05** | 1.99e-03 ± 3.2e-05 | **2.83e-03 ± 1.7e-05** | **1.56e-03 ± 4.3e-05** | **8.59e-04 ± 1.4e-05** |
+| QKAN-FWP-O | 154 | **2.29e-09 ± 2.1e-09** | 4.40e-08 ± 1.4e-08 | 2.00e-07 ± 8.4e-08 | 3.42e-05 ± 4.9e-06 | **1.54e-07 ± 3.5e-08** | 9.05e-04 ± 9.2e-06 | **1.97e-03 ± 2.6e-05** | 2.87e-03 ± 1.7e-05 | 1.79e-03 ± 4.4e-05 | 8.67e-04 ± 3.4e-06 |
 
 ## QKAN-FWP-O against each model on the families (geometric mean over the cells)
 
@@ -155,6 +160,8 @@ Mean ± std over 3 seeds at the learning rate chosen on validation (one of 3e-3,
 | QKAN-FWP+ | 149 | **23× lower** | 9/10 | 0.98× … 2.1e4× |
 | HQKAN-Δ (static) | 136 | **30× lower** | 10/10 | 1.4× … 4.3e4× |
 | LSTM, same tokens (not QKAN) | 160 | **21× lower** | 10/10 | 1.2× … 1.8e4× |
+| Same memory on classical tanh features (not QKAN) | 166 | equal (1.00×) | 6/10 | 0.76× … 1.2× |
+| Same memory on classical cos features (not QKAN) | 166 | **1.6× lower** | 5/10 | 0.69× … 25× |
 | *one linear AR(p) for all sequences* | – | **5.8× lower** | 9/10 | 0.067× … 1345× |
 | *ridge AR(q) fitted inside each window* | – | 87× higher | 6/10 | 2e-17× … 1752× |
 
@@ -166,6 +173,9 @@ Mean ± std over 3 seeds at the learning rate chosen on validation (one of 3e-3,
 | sequential delta rule instead of the least-squares solve | 154 | **7.4×** | 1149× | 508× | 21× | 4.1× | 4.2× | 1.2× | 1.8× | 1.2× | 0.93× | 1.1× |
 | no gate (additive statistics, uniform weights) | 128 | **1.5×** | 0.41× | 0.67× | 0.57× | 1.4× | 1.3× | 3.5× | 3× | 2.4× | 3.1× | 2.7× |
 | no Bloch features: linear term only (classical control) | 76 | **1.1×** | 0.012× | 0.046× | 0.056× | 1164× | 2.4× | 0.97× | 1.1× | 1× | 22× | 1× |
+| classical tanh(w·u + b) features instead of the Bloch features, same memory | 166 | **1×** | 1.2× | 0.76× | 0.87× | 1× | 1.1× | 1.2× | 1× | 1× | 0.88× | 1× |
+| classical cos(w·u + b) features instead of the Bloch features, same memory | 166 | **1.6×** | 4.4× | 25× | 1.2× | 0.69× | 1.2× | 0.98× | 1× | 0.99× | 0.87× | 0.99× |
+| float32 instead of float64 (features, statistics and solve) | 154 | **1×** | 1.4× | 1.1× | 0.92× | 1.1× | 0.97× | 0.99× | 1× | 1× | 0.99× | 1× |
 
 ## Finite-shot sensitivity (N = 16; test MSE against the shot budget S per circuit and input, mean over 3 seeds)
 
