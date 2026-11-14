@@ -76,6 +76,12 @@ class ObsMemConfig:
     # phi(u) = a * base(u) + r . n(u).  'none' | 'identity' | 'silu'
     base: str = "identity"
     quantum: bool = True  # False: drop the Bloch features (classical control, needs base != 'none')
+    # Tangent features u * d n / d u (reps = 1 only): the first-order effect of
+    # changing the frequency w of the data-encoding gate RZ(w u) around w = 1, so
+    # the context can also adapt the frequency of each circuit, still by a
+    # linear solve.  On hardware d n / d u is the parameter-shift difference
+    # [n(u + pi/2) - n(u - pi/2)] / 2 of the same circuit.
+    tangent: bool = False
     # 'ls'   : gated least squares (closed form, see module docstring)
     # 'delta': sequential normalised delta rule (no matrix solve)
     # 'none' : static observable R_0 (no fast weights)
@@ -153,7 +159,9 @@ class ObservableMemoryFWP(nn.Module):
             nn.init.xavier_normal_(self.theta)
         elif cfg.base == "none":
             raise ValueError("a model without Bloch features needs a base activation")
-        self.n_feat = 1 + (h if cfg.base != "none" else 0) + (3 * h if cfg.quantum else 0)
+        if cfg.tangent and not (cfg.quantum and cfg.reps == 1):
+            raise ValueError("tangent features need Bloch features and reps == 1")
+        self.n_feat = 1 + (h if cfg.base != "none" else 0) + (3 * h if cfg.quantum else 0) + (3 * h if cfg.tangent else 0)
         f = self.n_feat
         self.n_out = cfg.out_basis or cfg.d_out  # regression outputs per pair
         # prior / static observable: one coefficient per feature (and per output)
@@ -206,6 +214,10 @@ class ObservableMemoryFWP(nn.Module):
             raise ValueError(cfg.base)
         if cfg.quantum:
             parts.append(daruan_bloch(u, self.theta).flatten(-3))
+        if cfg.tangent:
+            shift = 0.5 * math.pi
+            dn = 0.5 * (daruan_bloch(u + shift, self.theta) - daruan_bloch(u - shift, self.theta))  # d n / d u
+            parts.append((u[..., None, :, None] * dn).flatten(-3))
         return torch.cat(parts, -1)
 
     def _prior_precision(self) -> torch.Tensor:

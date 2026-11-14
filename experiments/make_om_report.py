@@ -316,15 +316,15 @@ def family_part(out):
     out.append("")
 
     out += ["## QKAN-FWP-O against each model on the families (geometric mean over the cells)\n",
-            "| Compared with | Params | Geo-mean test MSE of ours | Cells where ours is lower | Smallest … largest factor |", "|---|---|---|---|---|"]
+            "| Compared with | Params | Geo-mean test MSE of QKAN-FWP-O | Cells where it is lower | Smallest … largest factor |", "|---|---|---|---|---|"]
 
     def versus(get, label, par):
         rat = [sel[(c_, OM_BASE)][1].mean() / get(c_) for c_ in cells_ if get(c_) is not None]
         if not rat:
             return
         r = gmean(rat)
-        word = f"**{1 / r:.1f}× lower**" if r < 1 else f"{r:.1f}× higher"
-        out.append(f"| {label} | {par} | {word} | {sum(x < 1 for x in rat)}/{len(rat)} | {1 / max(rat):.2g}× … {1 / min(rat):.2g}× |")
+        word = f"**{big(1 / r)}× lower**" if r < 1 else f"{big(r)}× higher"
+        out.append(f"| {label} | {par} | {word} | {sum(x < 1 for x in rat)}/{len(rat)} | {big(1 / max(rat))}× … {big(1 / min(rat))}× |")
 
     for v, lab in models:
         if v != OM_BASE:
@@ -346,27 +346,51 @@ def family_part(out):
 
 
 def fig_family(sel, refs, params, cells_, models, path):
+    from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
+
     fams = [f for f in FAMILY_TITLES if any(c_[0] == f for c_ in cells_)]
     noises = sorted({c_[2] for c_ in cells_})
-    fig, axes = plt.subplots(len(noises), len(fams), figsize=(2.75 * len(fams) + 2.2, 2.5 * len(noises) + 0.9),
+    fig, axes = plt.subplots(len(noises), len(fams), figsize=(2.75 * len(fams) + 2.2, 2.6 * len(noises) + 0.9),
                              sharey=True, squeeze=False)
     ys = np.arange(len(models))[::-1]
+    ref_style = [("lin_global", BLUE, (0, (4, 3)), 1.2, "one linear AR for all sequences"),
+                 ("lin_ctx", ORANGE, (0, (1, 2)), 1.6, "ridge AR fitted inside each window")]
     for i, nz in enumerate(noises):
         for j, f in enumerate(fams):
             ax = axes[i, j]
             c_ = next(c0 for c0 in cells_ if c0[0] == f and c0[2] == nz)
+            lo, hi = np.inf, 0.0
             for (v, _), y in zip(models, ys):
                 if (c_, v) not in sel:
                     continue
                 vals = sel[(c_, v)][1]
+                lo, hi = min(lo, vals.min()), max(hi, vals.max())
                 color = VIOLET if v == OM_BASE else INK2
                 ax.plot([vals.min(), vals.max()], [y, y], color=color, linewidth=1.5, zorder=2)
                 ax.scatter([vals.mean()], [y], s=70 if v == OM_BASE else 36, color=color, zorder=3,
                            marker="*" if v == OM_BASE else "o")
-            lg, lc = refs[c_]["lin_global"]["test"], refs[c_]["lin_ctx"]["test"]
-            ax.axvline(lg, color=BLUE, linestyle=(0, (4, 3)), linewidth=1.2, label="one linear AR for all sequences")
-            ax.axvline(lc, color=ORANGE, linestyle=(0, (1, 2)), linewidth=1.6, label="ridge AR fitted inside each window")
+            # the axis follows the models; a reference far below it is marked at the left edge
+            ref_vals = [refs[c_][k]["test"] for k, *_ in ref_style]
+            lo_ax = min([lo] + [r for r in ref_vals if r > lo / 1e3]) / 2.5
+            hi_ax = max([hi] + ref_vals) * 2.5
             ax.set_xscale("log")
+            ax.set_xlim(lo_ax, hi_ax)
+            off = 0
+            for (k, color, ls, lw, label), r in zip(ref_style, ref_vals):
+                if r >= lo_ax:
+                    ax.axvline(r, color=color, linestyle=ls, linewidth=lw, label=label)
+                else:
+                    ax.plot([], [], color=color, linestyle=ls, linewidth=lw, label=label)
+                    ax.scatter([0.035], [0.5 - 0.16 * off], marker="<", s=40, color=color, transform=ax.transAxes, zorder=4,
+                               clip_on=False)
+                    ax.text(0.075, 0.5 - 0.16 * off, f"{r:.0e}".replace("e-0", "e-"), transform=ax.transAxes, va="center",
+                            fontsize=8, color=INK2)
+                    off += 1
+            span = np.log10(hi_ax / lo_ax)
+            ax.xaxis.set_major_locator(LogLocator(base=10, subs=(1.0,) if span > 2.5 else (1.0, 3.0), numticks=5))
+            ax.xaxis.set_major_formatter(FuncFormatter(lambda val, _: f"{val:.0e}".replace("e-0", "e-")))
+            ax.xaxis.set_minor_formatter(NullFormatter())
+            ax.tick_params(axis="x", labelsize=8)
             ax.set_ylim(-0.6, len(models) - 0.4)
             ax.grid(axis="y", visible=False)
             ax.set_title(f"{FAMILY_TITLES[f]}" + (f", noise {nz:g}" if nz else ", no noise"), fontsize=10)
@@ -374,7 +398,8 @@ def fig_family(sel, refs, params, cells_, models, path):
                 ax.set_xlabel("test MSE (log scale)")
         axes[i, 0].set_yticks(ys, [f"{lab} ({params[v]})" for v, lab in models], fontsize=8.5)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.0), fontsize=9, title="closed-form references")
+    fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.0), fontsize=9,
+               title="closed-form references (◂ with a number: below the plotted range)")
     fig.tight_layout(rect=(0, 0, 1, 0.90))
     fig.savefig(path, dpi=200)
     plt.close(fig)

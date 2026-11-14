@@ -116,7 +116,7 @@ def om_variant(name: str) -> dict:
     ``static`` (no fast weights), ``delta`` (sequential delta rule), ``gconst`` /
     ``gnone`` (constant gate / additive statistics), ``nobase`` / ``silu`` (QKAN
     base activation), ``classical`` (no Bloch features), ``nomask``, ``pscalar``
-    (one prior precision), ``lags`` (raw lag tokens), ``p<x>`` (prior_init 10^-x),
+    (one prior precision), ``tan`` (tangent features), ``lags`` (raw lag tokens), ``p<x>`` (prior_init 10^-x),
     ``noclip`` (no gradient-norm clipping; the default clips the norm at 1)."""
     parts = name.split("_")
     core = parts[1]
@@ -128,7 +128,7 @@ def om_variant(name: str) -> dict:
         "gconst": dict(gate="const"), "gnone": dict(gate="none"),
         "nobase": dict(base="none"), "silu": dict(base="silu"),
         "classical": dict(quantum=False), "nomask": dict(mask_padded=False),
-        "pscalar": dict(prior="scalar"), "lags": dict(context_mode="lags"),
+        "pscalar": dict(prior="scalar"), "lags": dict(context_mode="lags"), "tan": dict(tangent=True),
     }
     for extra in parts[2:]:
         if extra in switches:

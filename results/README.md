@@ -11,7 +11,7 @@ runners skip runs that are already present.
 | `dev_baseline_arch.jsonl` | Validation runs used to choose the layer sizes of the re-implemented baseline |
 | `dev_screen.jsonl` | Validation runs for single changes (learning rate, residual read-out, tokens, gates) |
 | `dev_param_matched.jsonl`, `dev_other_lr*.jsonl` | Validation runs used to choose QKAN-FWP+, HQKAN-Δ and the learning rates of the other models |
-| `dev_om.jsonl` | Validation runs used to choose the configuration of QKAN-FWP-O (token length, circuits, prior, masking) |
+| `dev_om.jsonl` | Validation runs used to choose the configuration of QKAN-FWP-O (token length, circuits, prior, masking, tangent features) |
 | `final_timeseries.jsonl` | Paper protocol, seeds 0–4: re-implemented GQKAN-QKANFWP (lr 1e-3 and tuned), GQKAN-FWP, G-QKANFWP |
 | `final_timeseries_abl.jsonl` | Paper protocol: one change at a time on top of the baseline (appendix A of the report) |
 | `final_timeseries_pm.jsonl` | Paper protocol: QKAN-FWP+, HQKAN-Δ, their ablations and the LSTM control |
@@ -30,6 +30,7 @@ runners skip runs that are already present.
 |---|---|
 | `family_lr.jsonl` | Seed 0 at three learning rates for every model and cell, plus the closed-form references |
 | `family.jsonl` | The same runs plus seeds 1–2 at the learning rate with the lowest validation MSE |
+| `dev_family_tangent.jsonl` | Seed-0 runs of the 4-circuit QKAN-FWP-O with and without tangent features on the Hénon and Duffing families |
 
 ## Finite shots (`experiments/shot_noise.py`)
 

@@ -245,3 +245,20 @@ def test_multistep_solve_is_column_wise_ridge_regression():
         a = k[0, :-1]
         ref = torch.linalg.solve(a.T @ a + lam, a.T @ z[0, :, col] + lam @ m.r0[:, col])
         assert torch.allclose(r[0, :, col], ref, atol=1e-8)
+
+
+def test_tangent_features_are_the_parameter_shift_derivative():
+    """For reps = 1 the input enters one RZ gate, so d n / d u is the exact
+    parameter-shift difference of the same circuit."""
+    torch.manual_seed(0)
+    u = torch.randn(5, 4, dtype=torch.float64, requires_grad=True)
+    theta = torch.randn(1, 4, 2, 2, dtype=torch.float64)
+    n = daruan_bloch(u, theta)
+    shift = 0.5 * math.pi
+    ps = 0.5 * (daruan_bloch(u + shift, theta) - daruan_bloch(u - shift, theta))[:, 0]
+    ad = torch.stack([torch.autograd.grad(n[..., i].sum(), u, retain_graph=True)[0] for i in range(3)], -1)
+    assert torch.allclose(ps, ad, atol=1e-10)
+    m = ObservableMemoryFWP(ObsMemConfig(hidden=4, reps=1, tangent=True))
+    assert m.n_feat == 1 + 4 + 12 + 12
+    with pytest.raises(ValueError):
+        ObservableMemoryFWP(ObsMemConfig(hidden=4, reps=2, tangent=True))
