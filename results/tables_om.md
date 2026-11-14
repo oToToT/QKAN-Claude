@@ -14,7 +14,7 @@
 | NARMA5 | 6.5e-06 | 2.3e-04 | 2.8e-04 | 5.4e-06 | 6.0e-06 | 2.9e-06 | **4.0e-07** | *1.3e-06* |
 | NARMA10 | 9.5e-06 | 6.9e-04 | 7.6e-04 | 6.3e-06 | 8.1e-06 | 2.7e-06 | **3.2e-07** | *1.7e-06* |
 | Delayed quantum control | 5.5e-06 | 4.4e-04 | 7.5e-04 | 4.4e-06 | 8.0e-06 | 3.5e-06 | **2.2e-08** | *2.6e-07* |
-| Jaynes–Cummings | 7.6e-06 | 1.7e-05 | 6.5e-06 | – | 7.4e-09 | 1.7e-09 | **4.7e-13** | *2.4e-16* |
+| Jaynes–Cummings | 7.6e-06 | 1.7e-05 | 6.5e-06 | 1.5e-09 | 7.4e-09 | 1.7e-09 | **4.7e-13** | *2.4e-16* |
 
 ## Each model against every reference (geometric-mean test-MSE factor; in brackets: cells where the model is lower)
 
@@ -28,7 +28,7 @@ Values below 1e-15 (rounding of the float32 targets) are clipped at 1e-15 before
 | G-QKANFWP, tuned lr | 175 | 33× lower (23/24) | 129× lower (24/24) | 8.8e4× lower (24/24) |
 | CMG, lr 1e-3 | 188 | 123× lower (20/20) | 478× lower (20/20) | 2.3e5× lower (20/20) |
 | CMG, tuned lr | 188 | 31× lower (21/24) | 122× lower (24/24) | 8.3e4× lower (24/24) |
-| CMG + Δ-tokens + residual, tuned lr | 173 | 1.6× higher (2/20) | 2.4× lower (19/20) | 1166× lower (20/20) |
+| CMG + Δ-tokens + residual, tuned lr | 173 | 2× higher (2/24) | 2× lower (21/24) | 1372× lower (24/24) |
 | QKAN-FWP+ | 149 | – | 3.9× lower (24/24) | 2688× lower (24/24) |
 | HQKAN-Δ | 136 | 3.9× higher (0/24) | – | 683× lower (23/24) |
 | *Printed for GQKAN-QKANFWP in arXiv:2605.06734* | 159 | 40× lower (23/24) | 158× lower (24/24) | 1.1e5× lower (24/24) |
@@ -43,7 +43,7 @@ Geometric mean over the four windows per dataset; the last two columns count the
 |---|---|---|---|---|---|---|---|---|
 | GQKAN-QKANFWP, tuned lr | 1.6e6× | 2.0e6× | 568× | 2165× | 2.0e4× | 3.6e7× | 24/24 | 17× … 1.5e8× |
 | CMG, tuned lr | 9.5e5× | 4.3e5× | 715× | 2388× | 3.5e4× | 1.4e7× | 24/24 | 19× … 1.1e8× |
-| CMG + Δ-tokens + residual, tuned lr | 3.1e5× | 1.3e5× | 13× | 20× | 202× | – | 20/20 | 1.4× … 4.2e6× |
+| CMG + Δ-tokens + residual, tuned lr | 3.1e5× | 1.3e5× | 13× | 20× | 202× | 3085× | 24/24 | 1.4× … 4.2e6× |
 | QKAN-FWP+ | 5.4e5× | 3.2e5× | 15× | 25× | 373× | 1.6e4× | 24/24 | 2.1× … 1.6e6× |
 | HQKAN-Δ | 4.9e4× | 5.5e4× | 7.3× | 8.6× | 163× | 3677× | 23/24 | 0.84× … 1.6e5× |
 | *Linear AR(8), least squares* | 0.00036× | 0.015× | 3.3× | 5.3× | 12× | 0.0021× | 11/24 | 8.4e-05× … 69× |
@@ -72,10 +72,10 @@ Geometric mean over the four windows per dataset; the last two columns count the
 | Delayed quantum control | 16 | 2.04e-03 ± 4.3e-04 | 4.63e-04 ± 1.3e-04 | 1.27e-03 ± 1.9e-04 | 4.72e-04 ± 6.8e-05 | 3.42e-03 ± 1.6e-03 | 1.12e-03 ± 3.4e-04 | 4.44e-06 ± 8.2e-07 | 9.03e-06 ± 4.8e-06 | 5.92e-06 ± 5.4e-06 | **3.30e-08 ± 1.1e-08** | *3.0e-07* |
 | Delayed quantum control | 32 | 1.91e-03 ± 6.1e-04 | 3.96e-04 ± 9.7e-05 | 8.12e-04 ± 2.1e-04 | 3.15e-04 ± 9.4e-05 | 2.71e-03 ± 8.4e-04 | 5.08e-04 ± 1.3e-04 | 3.30e-06 ± 2.3e-06 | 4.31e-06 ± 2.0e-06 | 2.65e-06 ± 1.6e-06 | **1.00e-08 ± 1.3e-09** | *3.0e-07* |
 | Delayed quantum control | 64 | 1.20e-03 ± 3.3e-04 | 3.37e-04 ± 8.5e-05 | 8.04e-04 ± 7.4e-05 | 3.15e-04 ± 1.1e-04 | 2.90e-03 ± 1.5e-03 | 5.79e-04 ± 1.4e-04 | 4.85e-06 ± 4.1e-06 | 1.05e-05 ± 5.6e-06 | 2.80e-06 ± 1.6e-06 | **3.44e-09 ± 5.7e-10** | *2.4e-07* |
-| Jaynes–Cummings | 8 | 2.75e-05 ± 1.7e-05 | 1.95e-05 ± 2.5e-06 | 5.04e-05 ± 1.1e-05 | 1.55e-05 ± 4.8e-06 | – | 1.48e-05 ± 2.1e-06 | – | 7.71e-09 ± 6.0e-09 | 1.41e-09 ± 1.2e-09 | **1.32e-13 ± 1.5e-13** | *2.4e-16* |
-| Jaynes–Cummings | 16 | 4.25e-05 ± 4.8e-05 | 2.24e-05 ± 3.5e-06 | 5.25e-05 ± 2.1e-06 | 1.01e-05 ± 2.6e-06 | – | 6.00e-06 ± 4.6e-06 | – | 3.68e-09 ± 1.5e-09 | 1.70e-09 ± 1.2e-09 | **1.58e-13 ± 1.7e-13** | *2.4e-16* |
-| Jaynes–Cummings | 32 | 3.38e-05 ± 4.1e-05 | 1.42e-05 ± 3.6e-06 | 2.02e-05 ± 4.1e-06 | 1.13e-05 ± 3.8e-06 | – | 2.94e-06 ± 3.1e-06 | – | 6.20e-09 ± 4.2e-09 | 3.17e-09 ± 2.7e-09 | **6.68e-13 ± 3.8e-13** | *2.4e-16* |
-| Jaynes–Cummings | 64 | 6.66e-05 ± 5.4e-05 | 1.42e-05 ± 2.6e-06 | 2.71e-05 ± 6.1e-06 | 1.02e-05 ± 2.9e-06 | – | 6.88e-06 ± 6.3e-06 | – | 1.71e-08 ± 2.6e-08 | 1.22e-09 ± 1.4e-09 | **3.65e-12 ± 1.4e-12** | *2.4e-16* |
+| Jaynes–Cummings | 8 | 2.75e-05 ± 1.7e-05 | 1.95e-05 ± 2.5e-06 | 5.04e-05 ± 1.1e-05 | 1.55e-05 ± 4.8e-06 | – | 1.48e-05 ± 2.1e-06 | 4.89e-10 ± 1.9e-10 | 7.71e-09 ± 6.0e-09 | 1.41e-09 ± 1.2e-09 | **1.32e-13 ± 1.5e-13** | *2.4e-16* |
+| Jaynes–Cummings | 16 | 4.25e-05 ± 4.8e-05 | 2.24e-05 ± 3.5e-06 | 5.25e-05 ± 2.1e-06 | 1.01e-05 ± 2.6e-06 | – | 6.00e-06 ± 4.6e-06 | 2.41e-09 ± 2.3e-09 | 3.68e-09 ± 1.5e-09 | 1.70e-09 ± 1.2e-09 | **1.58e-13 ± 1.7e-13** | *2.4e-16* |
+| Jaynes–Cummings | 32 | 3.38e-05 ± 4.1e-05 | 1.42e-05 ± 3.6e-06 | 2.02e-05 ± 4.1e-06 | 1.13e-05 ± 3.8e-06 | – | 2.94e-06 ± 3.1e-06 | 2.09e-09 ± 1.9e-09 | 6.20e-09 ± 4.2e-09 | 3.17e-09 ± 2.7e-09 | **6.68e-13 ± 3.8e-13** | *2.4e-16* |
+| Jaynes–Cummings | 64 | 6.66e-05 ± 5.4e-05 | 1.42e-05 ± 2.6e-06 | 2.71e-05 ± 6.1e-06 | 1.02e-05 ± 2.9e-06 | – | 6.88e-06 ± 6.3e-06 | 1.87e-09 ± 7.7e-10 | 1.71e-08 ± 2.6e-08 | 1.22e-09 ± 1.4e-09 | **3.65e-12 ± 1.4e-12** | *2.4e-16* |
 
 ## Closed-form linear autoregression against the best models (test MSE)
 
@@ -117,11 +117,11 @@ Geometric mean over the four windows per dataset; the last two columns count the
 |---|---|---|---|---|---|---|---|---|
 | Bloch vectors of 6 circuits, reps = 1 (QKAN-FWP-O) | 130–154 | 2.8e-12 | 5.9e-12 | 4.0e-07 | 3.2e-07 | 2.2e-08 | 4.7e-13 | – |
 | cos u, sin u of the same 6 units (same function space, no circuit) | 88–112 | 2.9e-12 | 6.0e-12 | 4.2e-07 | 4.3e-07 | 2.5e-08 | – | 1.1× |
-| cos u, sin u of 8 units (same number of features) | 116–148 | 2.0e-12 | 4.6e-12 | 3.7e-07 | 3.1e-07 | 3.1e-08 | – | 0.94× |
+| cos u, sin u of 8 units (same number of features) | 116–148 | 2.0e-12 | 4.6e-12 | 3.7e-07 | 3.1e-07 | 3.1e-08 | 5.0e-13 | 0.94× |
 | cos(w·u + b), 3 per unit, w and b trainable | 142–166 | 2.7e-12 | 6.4e-12 | 4.2e-07 | 5.3e-07 | 2.0e-08 | 4.4e-13 | 1.1× |
 | tanh(w·u + b), 3 per unit | 142–166 | 2.5e-12 | 5.5e-12 | 4.4e-07 | 2.9e-07 | 2.1e-08 | 3.8e-13 | 0.95× |
-| products u_i·u_j (quadratic polynomial) | 115–139 | 8.8e-13 | 8.2e-12 | 5.2e-07 | 5.4e-07 | 5.3e-08 | – | 1.2× |
-| 8 tanh units of a second layer (small MLP) | 132–156 | 1.7e-12 | 2.9e-12 | 6.3e-07 | 3.1e-07 | 2.6e-08 | – | 0.89× |
+| products u_i·u_j (quadratic polynomial) | 115–139 | 8.8e-13 | 8.2e-12 | 5.2e-07 | 5.4e-07 | 5.3e-08 | 2.2e-13 | 1.2× |
+| 8 tanh units of a second layer (small MLP) | 132–156 | 1.7e-12 | 2.9e-12 | 6.3e-07 | 3.1e-07 | 2.6e-08 | 1.6e-13 | 0.89× |
 | linear term only | 52–76 | 1.4e-12 | 1.9e-11 | 6.4e-07 | 4.5e-07 | 4.9e-08 | 1.1e-13 | 1.5× |
 
 ## Same features, different memory rule on the paper benchmarks (test MSE, geometric mean over the four windows; last column: factor to the first row over the 20 cells of the five 300-point series)
@@ -133,7 +133,7 @@ Geometric mean over the four windows per dataset; the last two columns count the
 | least squares without gate (uniform weights) | 104–128 | 3.4e-12 | 3.0e-12 | 1.2e-06 | 1.5e-06 | 3.0e-08 | – | 1.7× |
 | normalised delta rule, 4 sweeps over the context | 130–154 | 1.3e-09 | 3.9e-08 | 9.5e-07 | 1.5e-06 | 4.5e-07 | – | 59× |
 | normalised delta rule, 1 sweep | 130–154 | 2.5e-09 | 2.3e-08 | 9.2e-07 | 1.5e-06 | 4.9e-07 | – | 62× |
-| no memory, 9 circuits (same number of parameters) | 118–154 | 1.4e-08 | 8.5e-08 | 2.0e-06 | 2.0e-06 | 1.2e-06 | – | 164× |
+| no memory, 9 circuits (same number of parameters) | 118–154 | 1.4e-08 | 8.5e-08 | 2.0e-06 | 2.0e-06 | 1.2e-06 | 1.3e-13 | 164× |
 | no memory, 6 circuits | 79–103 | 2.4e-08 | 9.3e-08 | 2.1e-06 | 2.2e-06 | 1.2e-06 | 4.0e-13 | 190× |
 
 ## QKAN-FWP-O ablation on the paper benchmarks (test MSE ÷ full model, geometric mean over the cells both have)
@@ -268,6 +268,8 @@ S shots are available to every circuit for every input it processes. A ⟨Z⟩ r
 |---|---|---|---|---|---|---|---|---|---|
 | Bessel J2 | QKAN-FWP-O | 54 | exact | 5.1e-06 | 6.9e-07 | 9.0e-08 | 1.3e-08 | 1.7e-09 | 1.4e-12 |
 | Bessel J2 | QKAN-FWP-O | 54 | S = 10⁴ | 8.7e-11 | 1.4e-11 | 3.1e-12 | 3.0e-13 | 5.8e-14 | 2.7e-14 |
+| Bessel J2 | QKAN-FWP-O, query read along the programmed axis | 54 | exact | 2.8e-06 | 4.4e-07 | 5.4e-08 | 1.1e-08 | 1.3e-09 | 1.4e-12 |
+| Bessel J2 | QKAN-FWP-O, query read along the programmed axis | 54 | S = 10⁴ | 3.4e-11 | 6.6e-12 | 1.8e-12 | 2.5e-13 | 4.5e-14 | 2.2e-14 |
 | Bessel J2 | QKAN-FWP-O, float32 | 54 | exact | 5.4e-06 | 7.0e-07 | 8.7e-08 | 1.3e-08 | 1.7e-09 | 1.4e-12 |
 | Bessel J2 | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 7.0e-11 | 1.6e-11 | 3.6e-12 | 4.0e-13 | 6.6e-14 | 3.2e-14 |
 | Bessel J2 | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 2.2e-03 | 2.4e-04 | 2.3e-05 | 2.5e-06 | 5.2e-07 | 2.8e-07 |
@@ -276,6 +278,8 @@ S shots are available to every circuit for every input it processes. A ⟨Z⟩ r
 | Bessel J2 | QKAN-FWP+, ⟨Z⟩ read-out | 92 | S = 10⁴ | 1.5e-03 | 1.6e-04 | 1.6e-05 | 2.2e-06 | 9.1e-07 | 7.4e-07 |
 | NARMA10 | QKAN-FWP-O | 54 | exact | 1.4e-04 | 3.1e-05 | 8.8e-06 | 3.7e-06 | 2.2e-06 | 2.0e-06 |
 | NARMA10 | QKAN-FWP-O | 54 | S = 10⁴ | 7.3e-05 | 1.6e-05 | 8.0e-06 | 5.9e-06 | 5.4e-06 | 5.3e-06 |
+| NARMA10 | QKAN-FWP-O, query read along the programmed axis | 54 | exact | 1.0e-04 | 2.6e-05 | 8.2e-06 | 3.6e-06 | 2.2e-06 | 2.0e-06 |
+| NARMA10 | QKAN-FWP-O, query read along the programmed axis | 54 | S = 10⁴ | 4.1e-05 | 8.6e-06 | 4.0e-06 | 2.8e-06 | 2.5e-06 | 2.4e-06 |
 | NARMA10 | QKAN-FWP-O, float32 | 54 | exact | 4.1e-04 | 9.1e-05 | 2.2e-05 | 1.1e-05 | 9.2e-06 | 8.9e-06 |
 | NARMA10 | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 1.1e-04 | 2.1e-05 | 6.5e-06 | 3.9e-06 | 3.4e-06 | 3.3e-06 |
 | NARMA10 | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 1.4e-03 | 1.4e-04 | 1.7e-05 | 4.3e-06 | 3.0e-06 | 2.9e-06 |
@@ -284,6 +288,8 @@ S shots are available to every circuit for every input it processes. A ⟨Z⟩ r
 | NARMA10 | QKAN-FWP+, ⟨Z⟩ read-out | 92 | S = 10⁴ | 1.7e-03 | 2.1e-04 | 2.9e-05 | 1.3e-05 | 1.1e-05 | 1.1e-05 |
 | Delayed quantum control | QKAN-FWP-O | 54 | exact | 7.8e-05 | 1.2e-05 | 2.5e-06 | 5.0e-07 | 1.2e-07 | 3.2e-08 |
 | Delayed quantum control | QKAN-FWP-O | 54 | S = 10⁴ | 7.8e-07 | 1.8e-07 | 7.4e-08 | 5.1e-08 | 4.9e-08 | 4.8e-08 |
+| Delayed quantum control | QKAN-FWP-O, query read along the programmed axis | 54 | exact | 3.9e-05 | 7.8e-06 | 1.8e-06 | 4.6e-07 | 1.0e-07 | 3.2e-08 |
+| Delayed quantum control | QKAN-FWP-O, query read along the programmed axis | 54 | S = 10⁴ | 3.8e-07 | 1.2e-07 | 5.8e-08 | 4.2e-08 | 4.1e-08 | 4.1e-08 |
 | Delayed quantum control | QKAN-FWP-O, float32 | 54 | exact | 6.5e-05 | 9.8e-06 | 1.9e-06 | 4.1e-07 | 1.1e-07 | 3.5e-08 |
 | Delayed quantum control | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 7.2e-07 | 1.3e-07 | 5.0e-08 | 3.6e-08 | 3.3e-08 | 3.3e-08 |
 | Delayed quantum control | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 2.6e-03 | 2.7e-04 | 3.9e-05 | 1.6e-05 | 1.4e-05 | 1.4e-05 |
@@ -292,6 +298,8 @@ S shots are available to every circuit for every input it processes. A ⟨Z⟩ r
 | Delayed quantum control | QKAN-FWP+, ⟨Z⟩ read-out | 92 | S = 10⁴ | 2.5e-03 | 2.2e-04 | 3.1e-05 | 8.4e-06 | 6.3e-06 | 6.1e-06 |
 | Family: damped oscillation, noise 0.02 | QKAN-FWP-O | 54 | exact | 9.4e-04 | 9.1e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
 | Family: damped oscillation, noise 0.02 | QKAN-FWP-O | 54 | S = 10⁴ | 9.4e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O, query read along the programmed axis | 54 | exact | 9.2e-04 | 9.1e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O, query read along the programmed axis | 54 | S = 10⁴ | 9.3e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
 | Family: damped oscillation, noise 0.02 | QKAN-FWP-O, float32 | 54 | exact | 9.2e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 | 9.0e-04 |
 | Family: damped oscillation, noise 0.02 | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 9.4e-04 | 9.1e-04 | 9.1e-04 | 9.1e-04 | 9.1e-04 | 9.1e-04 |
 | Family: damped oscillation, noise 0.02 | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 8.7e-03 | 4.0e-03 | 3.5e-03 | 3.4e-03 | 3.4e-03 | 3.4e-03 |
@@ -300,6 +308,8 @@ S shots are available to every circuit for every input it processes. A ⟨Z⟩ r
 | Family: damped oscillation, noise 0.02 | QKAN-FWP+, ⟨Z⟩ read-out | 92 | S = 10⁴ | 1.0e-02 | 3.0e-03 | 2.3e-03 | 2.2e-03 | 2.2e-03 | 2.2e-03 |
 | Family: Hénon map | QKAN-FWP-O | 54 | exact | 1.2e-01 | 1.7e-02 | 2.3e-03 | 3.2e-04 | 6.6e-05 | 3.4e-05 |
 | Family: Hénon map | QKAN-FWP-O | 54 | S = 10⁴ | 1.4e-02 | 1.6e-03 | 2.8e-04 | 1.5e-04 | 1.4e-04 | 1.4e-04 |
+| Family: Hénon map | QKAN-FWP-O, query read along the programmed axis | 54 | exact | 5.5e-02 | 9.1e-03 | 1.5e-03 | 2.3e-04 | 5.5e-05 | 3.4e-05 |
+| Family: Hénon map | QKAN-FWP-O, query read along the programmed axis | 54 | S = 10⁴ | 9.7e-03 | 1.2e-03 | 2.1e-04 | 1.2e-04 | 1.1e-04 | 1.0e-04 |
 | Family: Hénon map | QKAN-FWP-O, float32 | 54 | exact | 1.2e-01 | 1.6e-02 | 2.3e-03 | 3.2e-04 | 6.8e-05 | 3.8e-05 |
 | Family: Hénon map | QKAN-FWP-O, float32 | 54 | S = 10⁴ | 1.4e-02 | 1.6e-03 | 2.8e-04 | 1.4e-04 | 1.3e-04 | 1.3e-04 |
 | Family: Hénon map | HQKAN-Δ, ⟨Z⟩ read-out | 12 | exact | 1.0e-02 | 2.4e-03 | 1.6e-03 | 1.5e-03 | 1.5e-03 | 1.5e-03 |
@@ -313,22 +323,32 @@ S shots are available to every circuit for every input it processes. A ⟨Z⟩ r
 |---|---|---|---|---|---|---|---|---|
 | Bessel J2 | QKAN-FWP-O | exact | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 |
 | Bessel J2 | QKAN-FWP-O | S = 10⁴ | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
+| Bessel J2 | QKAN-FWP-O, query read along the programmed axis | exact | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 |
+| Bessel J2 | QKAN-FWP-O, query read along the programmed axis | S = 10⁴ | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
 | Bessel J2 | QKAN-FWP-O, float32 | exact | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 | 9e+05 |
 | Bessel J2 | QKAN-FWP-O, float32 | S = 10⁴ | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
 | NARMA10 | QKAN-FWP-O | exact | 2e+06 | 2e+06 | 2e+06 | 2e+06 | 2e+06 | 2e+06 |
 | NARMA10 | QKAN-FWP-O | S = 10⁴ | 1e+05 | 1e+05 | 1e+05 | 1e+05 | 1e+05 | 1e+05 |
+| NARMA10 | QKAN-FWP-O, query read along the programmed axis | exact | 2e+06 | 2e+06 | 2e+06 | 2e+06 | 2e+06 | 2e+06 |
+| NARMA10 | QKAN-FWP-O, query read along the programmed axis | S = 10⁴ | 7e+05 | 6e+05 | 5e+05 | 5e+05 | 5e+05 | 5e+05 |
 | NARMA10 | QKAN-FWP-O, float32 | exact | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
 | NARMA10 | QKAN-FWP-O, float32 | S = 10⁴ | 8e+04 | 8e+04 | 8e+04 | 8e+04 | 8e+04 | 8e+04 |
 | Delayed quantum control | QKAN-FWP-O | exact | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
 | Delayed quantum control | QKAN-FWP-O | S = 10⁴ | 3e+05 | 3e+05 | 3e+05 | 3e+05 | 3e+05 | 3e+05 |
+| Delayed quantum control | QKAN-FWP-O, query read along the programmed axis | exact | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
+| Delayed quantum control | QKAN-FWP-O, query read along the programmed axis | S = 10⁴ | 5e+05 | 4e+05 | 4e+05 | 4e+05 | 4e+05 | 4e+05 |
 | Delayed quantum control | QKAN-FWP-O, float32 | exact | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 | 1e+06 |
 | Delayed quantum control | QKAN-FWP-O, float32 | S = 10⁴ | 6e+05 | 6e+05 | 6e+05 | 6e+05 | 6e+05 | 6e+05 |
 | Family: damped oscillation, noise 0.02 | QKAN-FWP-O | exact | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 |
 | Family: damped oscillation, noise 0.02 | QKAN-FWP-O | S = 10⁴ | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O, query read along the programmed axis | exact | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 |
+| Family: damped oscillation, noise 0.02 | QKAN-FWP-O, query read along the programmed axis | S = 10⁴ | 4e+02 | 3e+02 | 3e+02 | 3e+02 | 3e+02 | 3e+02 |
 | Family: damped oscillation, noise 0.02 | QKAN-FWP-O, float32 | exact | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 | 2e+02 |
 | Family: damped oscillation, noise 0.02 | QKAN-FWP-O, float32 | S = 10⁴ | 1e+02 | 1e+02 | 1e+02 | 1e+02 | 1e+02 | 1e+02 |
 | Family: Hénon map | QKAN-FWP-O | exact | 1e+05 | 1e+05 | 1e+05 | 2e+05 | 2e+05 | 2e+05 |
 | Family: Hénon map | QKAN-FWP-O | S = 10⁴ | 2e+04 | 2e+04 | 2e+04 | 2e+04 | 2e+04 | 2e+04 |
+| Family: Hénon map | QKAN-FWP-O, query read along the programmed axis | exact | 1e+05 | 1e+05 | 1e+05 | 2e+05 | 2e+05 | 2e+05 |
+| Family: Hénon map | QKAN-FWP-O, query read along the programmed axis | S = 10⁴ | 4e+03 | 4e+03 | 4e+03 | 4e+03 | 4e+03 | 4e+03 |
 | Family: Hénon map | QKAN-FWP-O, float32 | exact | 1e+05 | 1e+05 | 1e+05 | 1e+05 | 2e+05 | 2e+05 |
 | Family: Hénon map | QKAN-FWP-O, float32 | S = 10⁴ | 3e+03 | 3e+03 | 3e+03 | 3e+03 | 3e+03 | 3e+03 |
 
