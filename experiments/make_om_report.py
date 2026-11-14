@@ -504,9 +504,47 @@ def solar_part(out):
         out.append("")
 
 
+def memory_part(out):
+    """Learned memory weights of QKAN-FWP-O (results/memory_probe.json)."""
+    path = RES / "memory_probe.json"
+    if not path.exists():
+        return
+    probe = json.loads(path.read_text())
+    ds = [d for d in DATASETS if d in probe]
+    if not ds:
+        return
+    n_pairs = probe[ds[0]][0]["n_pairs"]
+    out += [f"## Memory weights learned by QKAN-FWP-O (N = 32, {n_pairs} complete context pairs; mean over test windows and seeds)\n",
+            "| Dataset | Test MSE | Total weight Σβ | Effective number of pairs | Weight of the most recent pair | Weight of the 3 most recent pairs |",
+            "|---|---|---|---|---|---|"]
+    colors = [BLUE, ORANGE, "#1baf7a", "#eda100", MAGENTA, GREEN]  # palette slots 1-6, fixed order
+    markers = ["o", "s", "^", "D", "v", "P"]
+    fig, ax = plt.subplots(figsize=(6.4, 3.9))
+    for d, color, marker in zip(DATASETS, colors, markers):
+        if d not in probe:
+            continue
+        runs = probe[d]
+        beta = np.mean([r["beta_by_age"] for r in runs], 0)
+        out.append(f"| {TITLES[d]} | {np.mean([r['test'] for r in runs]):.1e} | {np.mean([r['total_weight'] for r in runs]):.2f} "
+                   f"| {np.mean([r['effective_pairs'] for r in runs]):.1f} | {beta[0]:.2f} | {beta[:3].sum():.2f} |")
+        ax.plot(np.arange(1, len(beta) + 1), np.maximum(beta, 1e-6), color=color, marker=marker, markersize=4.5, linewidth=1.8,
+                label=TITLES[d])
+    out.append("")
+    ax.set_yscale("log")
+    ax.set_ylim(8e-7, 1.5)
+    ax.set_xlabel("age of the context pair (1 = most recent)")
+    ax.set_ylabel("mean weight β (log scale, clipped at 1e-6)")
+    ax.set_title("What the memory uses: weight of each context pair")
+    ax.legend(fontsize=8.5, ncol=2, loc="upper right")
+    fig.tight_layout()
+    fig.savefig(FIG / "om_memory.png", dpi=200)
+    plt.close(fig)
+
+
 def main():
     out = []
     timeseries_part(out)
+    memory_part(out)
     family_part(out)
     shots_part(out)
     solar_part(out)

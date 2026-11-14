@@ -162,6 +162,9 @@ python experiments/run_family.py --windows 16 --noise 0 0.02 --variants refs $FV
 python experiments/run_family.py --windows 16 --noise 0 0.02 --best-lr-from results/family_lr.jsonl --seeds 0 1 2 \
     --out results/family.jsonl
 
+# what the memory of QKAN-FWP-O uses (weights of the context pairs)
+python experiments/memory_probe.py
+
 # finite shots
 python experiments/shot_noise.py --variants $OM@cos30 ar_hqkan8+z@cos30 pmx_diff8_edge_h3l2+z@cos30 --train-shots 0 1e4 \
     --out results/shot_noise.jsonl

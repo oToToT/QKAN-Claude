@@ -13,18 +13,18 @@
 
 | Reference | Params | QKAN-FWP+ (149) | HQKAN-Δ (136) | QKAN-FWP-O (130–154) |
 |---|---|---|---|---|
-| GQKAN-QKANFWP, paper protocol | 152 | 223× lower (20/20) | 865× lower (20/20) | 4.2e5× lower (20/20) |
-| GQKAN-QKANFWP, tuned lr | 152 | 20× lower (20/20) | 78× lower (20/20) | 3.8e4× lower (20/20) |
-| GQKAN-FWP, tuned lr | 114 | 32× lower (18/20) | 124× lower (20/20) | 6.1e4× lower (20/20) |
-| G-QKANFWP, tuned lr | 175 | 15× lower (19/20) | 59× lower (20/20) | 2.9e4× lower (20/20) |
+| GQKAN-QKANFWP, paper protocol | 152 | 294× lower (22/22) | 1170× lower (22/22) | 6.2e5× lower (22/22) |
+| GQKAN-QKANFWP, tuned lr | 152 | 30× lower (22/22) | 118× lower (22/22) | 6.3e4× lower (22/22) |
+| GQKAN-FWP, tuned lr | 114 | 47× lower (20/22) | 188× lower (22/22) | 1.0e5× lower (22/22) |
+| G-QKANFWP, tuned lr | 175 | 22× lower (21/22) | 88× lower (22/22) | 4.7e4× lower (22/22) |
 | CMG, lr 1e-3 | 188 | 123× lower (20/20) | 478× lower (20/20) | 2.3e5× lower (20/20) |
 | CMG, tuned lr | 188 | 16× lower (17/20) | 62× lower (20/20) | 3.0e4× lower (20/20) |
 | CMG + Δ-tokens + residual | 173 | 1.6× higher (2/20) | 2.4× lower (19/20) | 1166× lower (20/20) |
-| QKAN-FWP+ | 149 | – | 3.9× lower (20/20) | 1892× lower (20/20) |
-| HQKAN-Δ | 136 | 3.9× higher (0/20) | – | 488× lower (19/20) |
-| *Printed for GQKAN-QKANFWP in arXiv:2605.06734* | 159 | 11× lower (19/20) | 42× lower (20/20) | 2.0e4× lower (20/20) |
-| *Best printed number of arXiv:2605.06734 and 2607.27945* | – | 1.7× lower (14/20) | 6.6× lower (17/20) | 3230× lower (19/20) |
-| *Linear AR(8), least squares* | 9 | 3.3e5× higher (2/20) | 8.5e4× higher (3/20) | 174× higher (11/20) |
+| QKAN-FWP+ | 149 | – | 4× lower (22/22) | 2119× lower (22/22) |
+| HQKAN-Δ | 136 | 4× higher (0/22) | – | 532× lower (21/22) |
+| *Printed for GQKAN-QKANFWP in arXiv:2605.06734* | 159 | 22× lower (21/22) | 87× lower (22/22) | 4.6e4× lower (22/22) |
+| *Best printed number of arXiv:2605.06734 and 2607.27945* | – | 3× lower (16/22) | 12× lower (19/22) | 6311× lower (21/22) |
+| *Linear AR(8), least squares* | 9 | 1.3e7× higher (2/22) | 3.4e6× higher (3/22) | 6297× higher (11/22) |
 
 ## All cells: test MSE (paper protocol, mean ± std over 5 seeds)
 
@@ -50,6 +50,8 @@
 | Delayed quantum control | 16 | 2.04e-03 ± 4.3e-04 | 4.63e-04 ± 1.3e-04 | 1.27e-03 ± 1.9e-04 | 4.72e-04 ± 6.8e-05 | 3.42e-03 ± 1.6e-03 | 1.12e-03 ± 3.4e-04 | 4.44e-06 ± 8.2e-07 | 9.03e-06 ± 4.8e-06 | 5.92e-06 ± 5.4e-06 | **3.30e-08 ± 1.1e-08** | *3.0e-07* |
 | Delayed quantum control | 32 | 1.91e-03 ± 6.1e-04 | 3.96e-04 ± 9.7e-05 | 8.12e-04 ± 2.1e-04 | 3.15e-04 ± 9.4e-05 | 2.71e-03 ± 8.4e-04 | 5.08e-04 ± 1.3e-04 | 3.30e-06 ± 2.3e-06 | 4.31e-06 ± 2.0e-06 | 2.65e-06 ± 1.6e-06 | **1.00e-08 ± 1.3e-09** | *3.0e-07* |
 | Delayed quantum control | 64 | 1.20e-03 ± 3.3e-04 | 3.37e-04 ± 8.5e-05 | 8.04e-04 ± 7.4e-05 | 3.15e-04 ± 1.1e-04 | 2.90e-03 ± 1.5e-03 | 5.79e-04 ± 1.4e-04 | 4.85e-06 ± 4.1e-06 | 1.05e-05 ± 5.6e-06 | 2.80e-06 ± 1.6e-06 | **3.44e-09 ± 5.7e-10** | *2.4e-07* |
+| Jaynes–Cummings | 32 | 3.38e-05 ± 4.1e-05 | 1.42e-05 ± 3.6e-06 | 2.02e-05 ± 4.1e-06 | 1.13e-05 ± 3.8e-06 | – | – | – | 6.20e-09 ± 4.2e-09 | 3.17e-09 ± 2.7e-09 | **6.68e-13 ± 3.8e-13** | *8.7e-32* |
+| Jaynes–Cummings | 64 | 6.66e-05 ± 5.4e-05 | 1.42e-05 ± 2.6e-06 | 2.71e-05 ± 6.1e-06 | 1.02e-05 ± 2.9e-06 | – | – | – | 1.71e-08 ± 2.6e-08 | 1.22e-09 ± 1.4e-09 | **3.65e-12 ± 1.4e-12** | *4.6e-32* |
 
 ## Closed-form linear autoregression against the best models (test MSE)
 
@@ -75,25 +77,38 @@
 | Delayed quantum control | 16 | 6.9e-06 | 9.0e-06 | 5.9e-06 | **3.3e-08** | 7.5e-05 | 3.0e-07 |
 | Delayed quantum control | 32 | 7.8e-06 | 4.3e-06 | 2.7e-06 | **1.0e-08** | 6.7e-05 | 3.0e-07 |
 | Delayed quantum control | 64 | 4.8e-06 | 1.1e-05 | 2.8e-06 | **3.4e-09** | 6.6e-05 | 2.4e-07 |
+| Jaynes–Cummings | 32 | 9.1e-06 | 6.2e-09 | 3.2e-09 | 6.7e-13 | 6.3e-31 | **8.7e-32** |
+| Jaynes–Cummings | 64 | 7.0e-06 | 1.7e-08 | 1.2e-09 | 3.7e-12 | 1.1e-29 | **4.6e-32** |
 
-- Linear AR(8) is lower than QKAN-FWP+ in 18/20 cells.
-- Linear AR(8) is lower than HQKAN-Δ in 17/20 cells.
-- Linear AR(8) is lower than QKAN-FWP-O in 9/20 cells.
-- Linear AR(8) is lower than the best printed number of the two papers in 17/20 cells.
+- Linear AR(8) is lower than QKAN-FWP+ in 20/22 cells.
+- Linear AR(8) is lower than HQKAN-Δ in 19/22 cells.
+- Linear AR(8) is lower than QKAN-FWP-O in 11/22 cells.
+- Linear AR(8) is lower than the best printed number of the two papers in 19/22 cells.
 
 ## QKAN-FWP-O ablation on the paper benchmarks (test MSE ÷ full model, geometric mean over the cells both have)
 
 | Variant | Params | All cells | Cells where the full model is better | Bessel J2 | Damped SHM | NARMA5 | NARMA10 | Delayed quantum control | Jaynes–Cummings |
 |---|---|---|---|---|---|---|---|---|---|
-| no fast weights (static observable R₀) | 79–103 | **190×** | 20/20 | 8436× | 1.6e4× | 5.2× | 6.7× | 54× | – |
+| no fast weights (static observable R₀) | 79–103 | **102×** | 20/22 | 8436× | 1.6e4× | 5.2× | 6.7× | 54× | 0.2× |
 | sequential delta rule instead of the least-squares solve | 130–154 | **62×** | 18/20 | 886× | 3936× | 2.3× | 4.8× | 23× | – |
 | no gate (additive statistics, uniform weights) | 104–128 | **1.7×** | 14/20 | 1.2× | 0.51× | 3.1× | 4.7× | 1.4× | – |
 | constant gate (not input dependent) | 105–129 | **1.4×** | 15/20 | 0.91× | 0.94× | 1.2× | 4.6× | 1.2× | – |
 | one prior precision instead of one per feature | 106–130 | **1×** | 9/20 | 0.99× | 0.98× | 0.98× | 1.2× | 0.9× | – |
 | no base-activation (linear) term: Bloch features only | 112–136 | **4.7×** | 18/20 | 3.8× | 25× | 1.8× | 3.2× | 4.2× | – |
-| no Bloch features: linear term only (classical control) | 52–76 | **1.5×** | 13/20 | 0.5× | 3.2× | 1.6× | 1.4× | 2.2× | – |
+| no Bloch features: linear term only (classical control) | 52–76 | **1.4×** | 13/21 | 0.5× | 3.2× | 1.6× | 1.4× | 2.2× | 0.46× |
 | 4 circuits instead of 6 | 88–104 | **1.7×** | 18/20 | 1.3× | 3.6× | 1.1× | 1.6× | 1.7× | – |
 | fixed token length 6 instead of min(8, N/2) | 142 | **1.9×** | 13/20 | 0.72× | 1.4× | 5.3× | 1.2× | 3.9× | – |
+
+## Memory weights learned by QKAN-FWP-O (N = 32, 24 complete context pairs; mean over test windows and seeds)
+
+| Dataset | Test MSE | Total weight Σβ | Effective number of pairs | Weight of the most recent pair | Weight of the 3 most recent pairs |
+|---|---|---|---|---|---|
+| Bessel J2 | 3.4e-12 | 0.99 | 9.5 | 0.19 | 0.47 |
+| Damped SHM | 2.8e-11 | 1.00 | 8.5 | 0.21 | 0.51 |
+| NARMA5 | 4.7e-08 | 1.00 | 1.4 | 0.84 | 1.00 |
+| NARMA10 | 2.2e-08 | 1.00 | 1.7 | 0.75 | 0.98 |
+| Delayed quantum control | 1.0e-08 | 0.92 | 16.1 | 0.10 | 0.27 |
+| Jaynes–Cummings | 7.0e-13 | 1.00 | 8.7 | 0.21 | 0.50 |
 
 ## Families of systems (window N = 16; test MSE on unseen sequences)
 

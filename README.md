@@ -51,6 +51,7 @@
 | `experiments/run_family.py` | 系統族上的 in-context 預測與封閉形式的參考線 |
 | `experiments/run_solar.py` | 太陽黑子週期 direct multi-step 預測（論文 Sec. 6.2） |
 | `experiments/shot_noise.py` | 有限量測次數的敏感度 |
+| `experiments/memory_probe.py` | QKAN-FWP-O 學到的記憶權重（每個 context 配對的權重） |
 | `experiments/reference_baselines.py` | 線性 AR 參考線 |
 | `experiments/make_figures.py`, `experiments/make_om_report.py` | 由 `results/*.jsonl` 產生表格與 `figures/` |
 | `experiments/report/` | `REPORT.md` 的文字來源與組裝程式 |

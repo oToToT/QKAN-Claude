@@ -32,6 +32,10 @@ runners skip runs that are already present.
 | `family.jsonl` | The same runs plus seeds 1–2 at the learning rate with the lowest validation MSE |
 | `dev_family_tangent.jsonl` | Seed-0 runs of the 4-circuit QKAN-FWP-O with and without tangent features on the Hénon and Duffing families |
 
+## Memory weights (`experiments/memory_probe.py`)
+
+`memory_probe.json`: mean weight of every context pair learned by QKAN-FWP-O on each benchmark (window 32, seeds 0–2).
+
 ## Finite shots (`experiments/shot_noise.py`)
 
 `shot_noise.jsonl`: test MSE as a function of the number of shots per measured expectation, for models trained with exact

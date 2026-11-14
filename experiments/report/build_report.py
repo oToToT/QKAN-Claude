@@ -20,6 +20,7 @@ TABLES = {
     "ts_cells": ("tables_om.md", "All cells: test MSE"),
     "ts_linear": ("tables_om.md", "Closed-form linear autoregression"),
     "om_ablation_ts": ("tables_om.md", "QKAN-FWP-O ablation on the paper benchmarks"),
+    "memory_probe": ("tables_om.md", "Memory weights learned by QKAN-FWP-O"),
     "fam_main": ("tables_om.md", "Families of systems"),
     "fam_vs": ("tables_om.md", "QKAN-FWP-O against each model on the families"),
     "om_ablation_fam": ("tables_om.md", "QKAN-FWP-O ablation on the families"),
