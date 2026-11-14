@@ -291,7 +291,7 @@ NEGATIVE = r'''## 9. 沒有效果、或要小心的地方
 | 太陽黑子：單獨的 chrono 初始化（scalar gate） | 0.0185 對 0.0184 | 一個 gate 只有一個時間尺度 |
 | 太陽黑子：平滑的輸出基底（QKAN-FWP+） | validation 與 test 都沒有改善 | 省 2,000 個參數，但不降誤差 |
 | 太陽黑子：QKAN-FWP-O 的 in-context 記憶 | 三種 split 中 validation 有兩種偏向沒有記憶的版本（8.2 節） | 收益來自參數化，不是記憶 |
-| QKAN-FWP-O：切線特徵 $u\,\partial\mathbf n/\partial u$（可用 parameter-shift 量得，讓 context 對電路頻率做一階調整） | 4 個電路＋切線特徵（140 參數）在 validation 上不如 6 個電路（154 參數）：幾何平均 6.3e-9 對 3.3e-9；Hénon 上比同為 4 個電路的版本好約 10% | 同樣的參數用在更多電路比較划算；程式保留為選項（`tangent`） |
+| QKAN-FWP-O：切線特徵 $u\,\partial\mathbf n/\partial u$（可用 parameter-shift 量得，讓 context 對電路頻率做一階調整） | 論文 benchmark 的 validation 上，4 個電路＋切線特徵（140 參數）不如 6 個電路（154 參數）：幾何平均 6.3e-9 對 3.3e-9。和同為 4 個電路的版本比（單一 seed），無雜訊的 Duffing 好 5.6 倍、Hénon 好約 10%，有雜訊的 Duffing 沒有改善 | 對非線性系統有幫助，但同樣的參數用在更多電路效果相當或更好；程式保留為選項（`tangent`） |
 
 兩個資料上的注意事項：
 
@@ -408,9 +408,12 @@ RESULTS_TS = r'''## 5. 結果：論文的六個 time-series benchmark
 
 - **QKAN-FWP-O** 比重新實作的 GQKAN-QKANFWP（調過 lr）低四個數量級以上，比 CMG 與另外兩個論文變體也是；
   它比同樣 token 與讀出的 QKAN-FWP+ 低三個數量級，比沒有記憶的 HQKAN-Δ 低兩個數量級以上（只有 NARMA5 的 N = 8 那一格略遜）。
-- **HQKAN-Δ 在每一格都比 QKAN-FWP+ 好**：在這些 benchmark 上，論文那種「由 slow programmer 產生旋轉角」的記憶沒有幫助，
-  把同樣的參數放進靜態網路反而更好。因為這個結論重要，兩者另外各加跑 10 個 seed（`results/extra_seeds.jsonl`，
-  5 個序列 × N ∈ {16, 64}）：15 個 seed 合計 HQKAN-Δ 好 2.5 倍，10 格中贏 9 格。
+- **CMG**：照 CMG 論文的設定（純量 token、188 參數）在調過 lr 之後和 scalar gate 的 baseline 同一個水準（Bessel 與 SHM 較好，
+  NARMA 與 DQC 沒有改善）。給它相同的 Δ-token 與 residual 讀出之後，它比 QKAN-FWP+ 好 1.6 倍——逐權重的 gate 與先寫後讀
+  有小幅幫助——但仍然輸給沒有記憶的 HQKAN-Δ。
+- **HQKAN-Δ 在每一格都比 QKAN-FWP+ 好**，也在幾乎每一格比 CMG 好：在這些 benchmark 上，「由 slow programmer 產生旋轉角」
+  這種型態的記憶沒有幫助，把同樣的參數放進靜態網路反而更好。因為這個結論重要，QKAN-FWP+ 與 HQKAN-Δ 另外各加跑 10 個 seed
+  （`results/extra_seeds.jsonl`，5 個序列 × N ∈ {16, 64}）：15 個 seed 合計 HQKAN-Δ 好 2.5 倍，10 格中贏 9 格。
 - QKAN-FWP-O 相對 HQKAN-Δ 的差距因此不是「加了記憶就會好」，而是**記憶的型態**：開迴路的角度記憶沒有用，
   閉迴路的量測算符記憶有用（5.4 節的消融）。
 
@@ -525,7 +528,7 @@ Fast weights 只有在「視窗裡有慢參數存不下來的資訊」時才有�
 <<fam_vs>>
 
 - **沒有雜訊時**，QKAN-FWP-O 在五個族都是最低的神經模型，比其餘最好的模型低 15 倍（Hénon、Duffing）到 2 萬倍（阻尼振盪）。
-  其他模型彼此差不多：有記憶的 QKAN-FWP+、CMG、LSTM 和沒有記憶的 HQKAN-Δ 在同一個量級，開迴路的記憶最多帶來約 2 倍。
+  其他模型彼此差不多：有記憶的 QKAN-FWP+、CMG、LSTM 和沒有記憶的 HQKAN-Δ 在同一個量級，開迴路的記憶最多帶來 2–3 倍。
 - **有雜訊時**差距縮小（不可約的誤差約為雜訊變異數 4e-4）：QKAN-FWP-O 在四個族最低（比次佳的模型低 1.1–2.3 倍），
   在 Hénon 上和 QKAN-FWP+ 打平。
 - **對線性參考線**：
@@ -649,7 +652,7 @@ SUMMARY = r'''## 摘要
 1. **QKAN-FWP-O 在論文的 benchmark 上比其他所有訓練出來的模型低兩到五個數量級**（5.1 節），參數量不超過論文。
    消融顯示收益來自閉迴路的記憶：拿掉 fast weights 差兩個數量級，把封閉形式的最小平方換成逐步的 delta rule 也差不多退回原點（5.4 節）。
 2. **論文型態的記憶（由 slow programmer 產生旋轉角）在這些 benchmark 上沒有幫助**：沒有 fast weights 的 HQKAN-Δ
-   在每一格都比 QKAN-FWP+ 好（15 個 seed 合計 2.5 倍）。有用的是記憶的型態，不是有沒有記憶。
+   在每一格都比 QKAN-FWP+ 好（15 個 seed 合計 2.5 倍），也比給了相同 token 的 CMG 好。有用的是記憶的型態，不是有沒有記憶。
 3. **在每條序列物理參數都不同的系統族上**（第 6 節：模型必須從 16 步的視窗辨識系統），QKAN-FWP-O 在 10 格中的 9 格最低、
    1 格打平：沒有雜訊時比其他神經模型低 15 倍到 2 萬倍，有雜訊時低 1.1–2.3 倍；在非線性的 Hénon map 上比兩條線性參考線低
    30–1300 倍，在有雜訊的線性族上與「在視窗內擬合 ridge AR」的 oracle 相當或更好。
