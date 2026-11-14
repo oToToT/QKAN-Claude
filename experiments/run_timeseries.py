@@ -144,6 +144,8 @@ def om_variant(name: str) -> dict:
         "rls": dict(memory="rls"), "delta4": dict(memory="delta", delta_passes=4),
         "axis": dict(query_readout="axis"),
         "noskip": dict(skip="none"),  # the target is not the next value of the input series
+        # the target is not in the window: the observable is solved from the labelled training windows
+        "hist": dict(memory="history", gate="none", skip="none"),
     }
     for extra in parts[2:]:
         if extra in switches:
@@ -253,7 +255,7 @@ def run_job(job: dict) -> dict:
     torch.set_num_threads(1)
     from qkanfwp import data
     from qkanfwp.models import count_parameters
-    from qkanfwp.train import fit
+    from qkanfwp.train import fit, fit_history
 
     spec = resolve(job["variant"])
     # Inputs are kept in float64 so that models with ``token_dtype='float64'``
@@ -281,10 +283,13 @@ def run_job(job: dict) -> dict:
     torch.manual_seed(job["seed"])
     np.random.seed(job["seed"])
     model = build_model(spec, job["window"], x[tr])
+    by_history = spec["model"].get("memory") == "history"
+    if spec.get("kind") == "om" and spec["model"].get("skip") == "none":
+        model.fit_target_scale(y[tr])  # the targets are not the input series
 
     train_kw = dict(epochs=job["epochs"], batch_size=4, lr=1e-3, seed=job["seed"], eval_every=5)
     train_kw.update(spec.get("train", {}))
-    res = fit(model, (x[tr], y[tr]), evals, **train_kw)
+    res = (fit_history if by_history else fit)(model, (x[tr], y[tr]), evals, **train_kw)
     return dict(
         job,
         params=count_parameters(model),

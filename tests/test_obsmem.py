@@ -526,3 +526,50 @@ def test_in_context_solve_absorbs_static_affine_device_errors():
     scale = (ideal - x[:, -1]).abs().max()
     assert (both - ideal).abs().max() < 1e-5 * scale
     assert (query_only - ideal).abs().max() > 1e-3 * scale
+
+
+def test_history_observable_is_ridge_regression_on_the_labelled_windows():
+    """``memory='history'``: the observable is solved from labelled windows (the
+    targets are not in the window) and then kept fixed; before any history is
+    stored the model predicts with the prior observable."""
+    torch.manual_seed(0)
+    g = torch.Generator().manual_seed(0)
+    x = torch.rand(60, 16, 1, generator=g, dtype=torch.float64)
+    y = (x[:, -1, 0] * x[:, -3, 0] + 0.2)[:, None]  # a product of two inputs: not the next value of the series
+    m = ObservableMemoryFWP(ObsMemConfig(hidden=6, reps=1, memory="history", gate="none", skip="none",
+                                         prior_init=1e-6, max_len=16))
+    m.fit_token_scale(x)
+    m.fit_target_scale(y)
+    _randomise(m)
+    with torch.no_grad():
+        m.log_prior.fill_(math.log(1e-6))
+        k = m.query_features(x)
+        assert torch.allclose(m(x[:5])[:, 0], (k[:5] @ m.r0) * m.y_scale)  # no history yet: prior observable
+        m.fit_history(x[:40], y[:40])
+        lam = torch.full((m.n_feat,), 1e-6, dtype=torch.float64) + m.cfg.prior_floor
+        ys = y[:40, 0] / m.y_scale
+        ref = m.r0 + torch.linalg.solve(k[:40].T @ k[:40] + torch.diag(lam), k[:40].T @ (ys - k[:40] @ m.r0))
+        assert torch.allclose(m.r_hist, ref, atol=1e-8)
+        assert torch.allclose(m(x[40:])[:, 0], (k[40:] @ ref) * m.y_scale)
+        static = (((k[40:] @ m.r0) * m.y_scale - y[40:, 0]) ** 2).mean()
+        assert ((m(x[40:]) - y[40:]) ** 2).mean() < 0.1 * static  # the solved observable fits the held-out windows
+    with pytest.raises(ValueError):
+        ObservableMemoryFWP(ObsMemConfig(memory="history"))  # needs gate='none' and skip='none'
+
+
+def test_history_training_runs_forecasting_episodes():
+    from qkanfwp.train import fit_history
+
+    torch.manual_seed(0)
+    t = torch.arange(140, dtype=torch.float64)
+    u = 0.1 * (torch.sin(0.07 * t) * torch.sin(0.11 * t) + 1.0)
+    x = torch.stack([u[i : i + 16] for i in range(120)])[..., None]
+    y = (1.5 * u[11:131] * u[15:135] + 0.1)[:, None].float()
+    m = ObservableMemoryFWP(ObsMemConfig(hidden=4, reps=1, memory="history", gate="none", skip="none",
+                                         prior_init=1e-5, max_len=16))
+    m.fit_token_scale(x[:90])
+    m.fit_target_scale(y[:90])
+    res = fit_history(m, (x[:90], y[:90]), {"test": (x[90:], y[90:])}, epochs=6, batch_size=4, lr=3e-2,
+                      schedule="cosine", seed=0, eval_every=3)
+    assert bool(m.has_history) and len(res["history"]["test"]) == 2
+    assert res["final"]["test"] < 0.2 * float(((y[:90].mean() - y[90:]) ** 2).mean())  # far below the mean predictor

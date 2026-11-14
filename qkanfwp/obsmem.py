@@ -222,6 +222,15 @@ class ObservableMemoryFWP(nn.Module):
             self.register_buffer("basis", basis)
             self.register_buffer("basis_pinv", torch.linalg.pinv(basis))  # (K, d_out)
         self.register_buffer("y_scale", torch.ones(()))
+        if cfg.memory == "history":
+            # The targets are not part of the window (e.g. a drive u is read and an
+            # output y is predicted), so there is nothing to write from the context.
+            # The observable is then solved from a labelled history - the training
+            # windows - with the same closed form, and kept fixed afterwards.
+            if cfg.gate != "none" or cfg.skip != "none" or cfg.d_out != 1:
+                raise ValueError("memory='history' needs gate='none', skip='none' and d_out=1")
+            self.register_buffer("r_hist", torch.zeros(f))
+            self.register_buffer("has_history", torch.zeros((), dtype=torch.bool))
         if cfg.memory != "none":
             n_prior = f if cfg.prior == "diag" else 1
             self.log_prior = nn.Parameter(torch.full((n_prior,), math.log(cfg.prior_init)))
@@ -248,6 +257,28 @@ class ObservableMemoryFWP(nn.Module):
             self.y_scale.copy_((s[:, 1:] - s[:, :-1]).std().clamp_min(1e-8))
         else:
             self.y_scale.copy_(s.std().clamp_min(1e-8))
+
+    @torch.no_grad()
+    def fit_target_scale(self, y_train: torch.Tensor) -> None:
+        """Scale of targets that are not the input series (``memory='history'``, or a static model with ``skip='none'``)."""
+        self.y_scale.copy_(y_train.double().std().clamp_min(1e-8))
+
+    def query_features(self, x: torch.Tensor) -> torch.Tensor:
+        """Features ``(B, F)`` of the last token of every window."""
+        return self.features(self.tokenizer(x)[:, -1].to(self.dtype))
+
+    def history_observable(self, k: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """Observable ``R = R0 + (Lambda0 + sum_i k_i k_i^T)^{-1} sum_i k_i (y_i - k_i . R0)``
+        solved from labelled windows: ``k`` (n, F) their query features, ``y`` (n,) their targets."""
+        err0 = y.to(self.dtype) / self.y_scale - k @ self.r0
+        c = k.T @ k + torch.diag(self._prior_precision())
+        return self.r0 + torch.linalg.solve(c, k.T @ err0)
+
+    @torch.no_grad()
+    def fit_history(self, x: torch.Tensor, y: torch.Tensor) -> None:
+        """Store the observable solved from the labelled windows ``(x, y)``; it is used by ``forward`` from then on."""
+        self.r_hist.copy_(self.history_observable(self.query_features(x), y.reshape(-1)))
+        self.has_history.fill_(True)
 
     def features(self, tok: torch.Tensor) -> torch.Tensor:
         """``(..., context)`` tokens -> ``(..., F)`` features
@@ -410,6 +441,9 @@ class ObservableMemoryFWP(nn.Module):
         raise ValueError(cfg.memory)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.cfg.memory == "history":
+            r = self.r_hist if bool(self.has_history) else self.r0
+            return ((self.query_features(x) * r).sum(-1) * self.y_scale)[:, None]
         shots = daruan.get_shots()
         scope = self.cfg.shot_scope if (shots is not None and self.cfg.d_out == 1) else "all"
         if scope == "all":

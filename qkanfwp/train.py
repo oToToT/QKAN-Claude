@@ -93,3 +93,65 @@ def fit(
     if best_state is not None:
         model.load_state_dict(best_state)
     return {"final": final, "best": best, "history": history, "seconds": time.time() - t0}
+
+
+def fit_history(
+    model: nn.Module,
+    train: tuple[torch.Tensor, torch.Tensor],
+    evals: dict[str, tuple[torch.Tensor, torch.Tensor]],
+    *,
+    epochs: int = 50,
+    batch_size: int = 4,
+    lr: float = 1e-3,
+    schedule: str = "constant",
+    seed: int = 0,
+    eval_every: int = 1,
+    grad_clip: float | None = None,
+) -> dict:
+    """Training of a model whose read-out is solved from a labelled history
+    (``ObservableMemoryFWP`` with ``memory='history'``).
+
+    Every optimiser step is one forecasting episode inside the training
+    windows, which are in chronological order: the windows before a random cut
+    are the labelled history, the observable is solved from them in closed
+    form, and the loss is the error on the windows after the cut.  The number
+    of optimiser steps equals that of the mini-batch protocol
+    (``epochs * ceil(n / batch_size)``).  For evaluation the observable is
+    solved from all training windows and kept fixed.
+    """
+    x_tr, y_tr = train
+    n = len(x_tr)
+    gen = torch.Generator().manual_seed(seed)
+    opt = torch.optim.Adam(model.parameters(), lr=lr)
+    steps_per_epoch = math.ceil(n / batch_size)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, epochs * steps_per_epoch) if schedule == "cosine" else None
+    ahead = max(n // 4, 1)  # the test part is a fifth of the series: forecast about that far past the cut
+    history = {k: [] for k in evals}
+    history["train_loss"] = []
+    t0 = time.time()
+    for epoch in range(epochs):
+        model.train()
+        running = 0.0
+        for _ in range(steps_per_epoch):
+            cut = int(torch.randint(n // 3, n - 1, (1,), generator=gen))
+            k = model.query_features(x_tr)
+            r = model.history_observable(k[:cut], y_tr[:cut, 0])
+            pred = (k[cut : cut + ahead] @ r) * model.y_scale
+            loss = ((pred - y_tr[cut : cut + ahead, 0]) ** 2).mean()
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            if grad_clip is not None:
+                nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            opt.step()
+            if sched is not None:
+                sched.step()
+            running += loss.item()
+        history["train_loss"].append(running / steps_per_epoch)
+        if (epoch + 1) % eval_every == 0 or epoch == epochs - 1:
+            model.fit_history(x_tr, y_tr)
+            for name, v in evals.items():
+                history[name].append(mse(model, *v))
+        if not np.isfinite(history["train_loss"][-1]):
+            break
+    model.fit_history(x_tr, y_tr)
+    return {"final": {k: history[k][-1] for k in evals}, "best": None, "history": history, "seconds": time.time() - t0}
