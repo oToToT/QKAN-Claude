@@ -20,8 +20,16 @@ The paper states 50 epochs; the README of the code gives 100 epochs as the bench
 | NARMA10, u → y (300 samples) | 16 | 5.2e-05 | 3.9e-05 ± 1.8e-05 | 4.5e-05 | 8.3e-06 | 5 | 0.76× |
 | NARMA10, u → y (300 samples) | 32 | 5.5e-05 | 4.1e-05 ± 1.7e-05 | 3.0e-05 | 1.6e-05 | 5 | 0.75× |
 | NARMA10, u → y (300 samples) | 64 | 1.1e-04 | 5.5e-05 ± 2.2e-05 | 5.3e-05 | 2.2e-05 | 5 | 0.51× |
+| Delayed quantum control (2200 samples) | 8 | 4.8e-05 | 1.9e-05 ± 3.3e-06 | 1.9e-05 | 1.7e-05 | 3 | 0.4× |
+| Delayed quantum control (2200 samples) | 16 | 4.1e-05 | 2.6e-05 ± 9.2e-06 | 2.3e-05 | 1.5e-05 | 3 | 0.63× |
+| Delayed quantum control (2200 samples) | 32 | 8.9e-05 | 1.1e-04 ± 6.2e-05 | 1.0e-04 | 5.1e-05 | 3 | 1.2× |
+| Delayed quantum control (2200 samples) | 64 | 2.2e-04 | 5.2e-05 ± 5.2e-05 | 3.1e-05 | 5.1e-05 | 3 | 0.24× |
+| Jaynes–Cummings (3000 samples) | 8 | 2.0e-04 | 8.2e-05 ± 6.9e-06 | 8.7e-05 | 7.9e-05 | 3 | 0.41× |
+| Jaynes–Cummings (3000 samples) | 16 | 1.6e-04 | 9.9e-05 ± 7.9e-05 | 7.8e-05 | 2.2e-05 | 3 | 0.62× |
+| Jaynes–Cummings (3000 samples) | 32 | 2.0e-04 | 8.0e-05 ± 5.2e-05 | 9.3e-05 | 6.6e-05 | 3 | 0.41× |
+| Jaynes–Cummings (3000 samples) | 64 | 3.2e-04 | 3.0e-04 ± 3.0e-04 | 1.2e-04 | 2.6e-04 | 3 | 0.93× |
 
-- Geometric mean over the 16 cells of (re-run ÷ printed): 1.6× with the mean at 50 epochs, 0.82× with the median at 50 epochs, 0.76× with the mean at 100 epochs.
+- Geometric mean over the 24 cells of (re-run ÷ printed): 1.1× with the mean at 50 epochs, 0.66× with the median at 50 epochs, 0.59× with the mean at 100 epochs.
 
 ## Authors' datasets: per-dataset summary (geometric mean over N ∈ {8, 16, 32, 64} of the seed-mean test MSE)
 
@@ -33,8 +41,8 @@ On the two NARMA tasks the window holds the drive u and the target is y: the mod
 | Damped SHM (240 samples) | 8.8e-06 | 5.0e-05 | 2.6e-05 | 8.0e-06 | 9.0e-07 | 2.7e-07 | **7.3e-12** | *2.0e-12* | – |
 | NARMA5, u → y (300 samples) | 6.5e-06 | 1.8e-05 | 6.6e-06 | 9.7e-06 | 2.6e-06 | 2.4e-06 | **2.8e-07** | *5.3e-06* | *2.8e-09* |
 | NARMA10, u → y (300 samples) | 9.5e-06 | 5.2e-05 | 1.1e-05 | 8.5e-06 | 4.2e-06 | 2.5e-06 | **9.7e-07** | *4.8e-06* | *9.4e-08* |
-| Delayed quantum control (2200 samples) | 5.5e-06 | – | – | – | – | – | – | *2.8e-14* | – |
-| Jaynes–Cummings (3000 samples) | 7.6e-06 | – | – | – | – | – | – | *1.5e-13* | – |
+| Delayed quantum control (2200 samples) | 5.5e-06 | 4.1e-05 | 1.6e-05 | 3.4e-09 | 2.0e-08 | 7.5e-12 | **4.0e-13** | *2.8e-14* | – |
+| Jaynes–Cummings (3000 samples) | 7.6e-06 | 1.2e-04 | 5.5e-05 | 6.1e-09 | 2.7e-09 | 5.3e-12 | **2.1e-12** | *1.5e-13* | – |
 
 ## Authors' datasets: QKAN-FWP-O against each model (reference test MSE ÷ QKAN-FWP-O test MSE; above 1: QKAN-FWP-O is lower)
 
@@ -42,13 +50,13 @@ Geometric mean over the four windows per dataset; values below 1e-15 are clipped
 
 | Compared with | Bessel J2 | Damped SHM | NARMA5, u → y | NARMA10, u → y | Delayed quantum control | Jaynes–Cummings | Cells where QKAN-FWP-O is lower | Smallest … largest factor |
 |---|---|---|---|---|---|---|---|---|
-| GQKAN-QKANFWP, authors' code, lr 1e-3 | 3.1e7× | 6.9e6× | 65× | 54× | – | – | 16/16 | 11× … 2.3e8× |
-| GQKAN-QKANFWP, authors' code, tuned lr | 3.0e5× | 3.5e6× | 24× | 11× | – | – | 16/16 | 1.7× … 1.1e7× |
-| QKAN-FWP+ | 4.1e5× | 1.1e6× | 35× | 8.8× | – | – | 16/16 | 1× … 2.8e6× |
-| HQKAN-Δ | 5.2e4× | 1.2e5× | 9.3× | 4.3× | – | – | 15/16 | 0.59× … 2.4e5× |
-| QKAN-FWP-O features, static observable | 1.0e4× | 3.7e4× | 8.8× | 2.6× | – | – | 14/16 | 0.48× … 5.5e4× |
-| *Best printed number of the two papers* | 6.5e5× | 1.2e6× | 23× | 9.8× | – | – | 16/16 | 3.6× … 4.2e6× |
-| *Linear on the last 8 inputs* | 0.0033× | 0.28× | 19× | 4.9× | – | – | 9/16 | 0.00066× … 234× |
+| GQKAN-QKANFWP, authors' code, lr 1e-3 | 3.1e7× | 6.9e6× | 65× | 54× | 1.0e8× | 5.7e7× | 24/24 | 11× … 2.3e8× |
+| GQKAN-QKANFWP, authors' code, tuned lr | 3.0e5× | 3.5e6× | 24× | 11× | 4.1e7× | 2.7e7× | 24/24 | 1.7× … 2.4e8× |
+| QKAN-FWP+ | 4.1e5× | 1.1e6× | 35× | 8.8× | 8690× | 2956× | 24/24 | 1× … 2.8e6× |
+| HQKAN-Δ | 5.2e4× | 1.2e5× | 9.3× | 4.3× | 5.0e4× | 1290× | 23/24 | 0.59× … 2.4e5× |
+| QKAN-FWP-O features, static observable | 1.0e4× | 3.7e4× | 8.8× | 2.6× | 19× | 2.6× | 21/24 | 0.17× … 5.5e4× |
+| *Best printed number of the two papers* | 6.5e5× | 1.2e6× | 23× | 9.8× | 1.4e7× | 3.7e6× | 24/24 | 3.6× … 1.8e7× |
+| *Linear on the last 8 inputs* | 0.0033× | 0.28× | 19× | 4.9× | 0.072× | 0.071× | 9/24 | 0.00066× … 234× |
 | *Ridge on quadratic features (NARMA only)* | – | – | 0.01× | 0.097× | – | – | 0/8 | 0.0015× … 0.64× |
 
 ## Authors' datasets: all cells (test MSE, mean ± std over the seeds)
@@ -71,5 +79,12 @@ Geometric mean over the four windows per dataset; values below 1e-15 are clipped
 | NARMA10, u → y (300 samples) | 16 | 5 | 3.93e-05 ± 1.8e-05 | 1.73e-06 ± 3.8e-07 | 6.52e-06 ± 2.4e-06 | 1.59e-06 ± 1.4e-06 | 2.32e-06 ± 2.7e-07 | **1.78e-07 ± 7.5e-08** | *4.9e-06* | *6.8e-08* |
 | NARMA10, u → y (300 samples) | 32 | 5 | 4.14e-05 ± 1.7e-05 | 6.24e-06 ± 2.0e-06 | 7.93e-06 ± 2.7e-06 | 1.66e-05 ± 3.1e-05 | **1.83e-06 ± 2.9e-07** | 3.66e-06 ± 3.4e-07 | *4.0e-06* | *1.8e-08* |
 | NARMA10, u → y (300 samples) | 64 | 5 | 5.51e-05 ± 2.2e-05 | 2.81e-05 ± 3.0e-05 | 2.42e-05 ± 1.8e-05 | 4.85e-06 ± 3.4e-06 | 4.70e-06 ± 1.5e-06 | **3.29e-07 ± 1.5e-07** | *4.1e-06* | *2.4e-08* |
-| Delayed quantum control (2200 samples) | 64 | 3 | – | 3.62e-05 ± 4.2e-05 | – | **2.39e-08 ± 3.0e-08** | – | – | *2.9e-14* | – |
+| Delayed quantum control (2200 samples) | 8 | 3 | 1.91e-05 ± 3.3e-06 | 4.36e-06 ± 8.6e-07 | 7.38e-09 ± 8.2e-09 | 1.02e-08 ± 2.9e-09 | 2.80e-12 ± 7.4e-13 | **2.27e-13 ± 1.5e-13** | *2.8e-14* | – |
+| Delayed quantum control (2200 samples) | 16 | 3 | 2.60e-05 ± 9.2e-06 | 9.15e-05 ± 1.2e-04 | 2.19e-09 ± 4.4e-10 | 1.53e-08 ± 1.6e-08 | 1.12e-11 ± 1.4e-11 | **3.80e-13 ± 1.4e-13** | *2.8e-14* | – |
+| Delayed quantum control (2200 samples) | 32 | 3 | 1.11e-04 ± 6.2e-05 | 4.74e-06 ± 2.1e-06 | 1.78e-09 ± 1.7e-10 | 3.97e-08 ± 4.8e-08 | 1.16e-11 ± 9.3e-12 | **4.84e-13 ± 1.5e-13** | *2.8e-14* | – |
+| Delayed quantum control (2200 samples) | 64 | 3 | 5.24e-05 ± 5.2e-05 | 3.62e-05 ± 4.2e-05 | 4.83e-09 ± 4.4e-09 | 2.39e-08 ± 3.0e-08 | 8.86e-12 ± 3.0e-12 | **5.83e-13 ± 1.7e-13** | *2.9e-14* | – |
+| Jaynes–Cummings (3000 samples) | 8 | 3 | 8.24e-05 ± 6.9e-06 | 2.61e-05 ± 3.7e-06 | 6.52e-09 ± 2.2e-09 | 7.23e-10 ± 4.6e-10 | **5.63e-13 ± 1.4e-13** | 3.24e-12 ± 2.8e-13 | *1.5e-13* | – |
+| Jaynes–Cummings (3000 samples) | 16 | 3 | 9.90e-05 ± 7.9e-05 | 5.39e-05 ± 4.8e-06 | 1.02e-08 ± 1.1e-08 | 9.25e-09 ± 1.2e-08 | 8.03e-12 ± 8.9e-12 | **1.21e-12 ± 1.5e-13** | *1.5e-13* | – |
+| Jaynes–Cummings (3000 samples) | 32 | 3 | 8.00e-05 ± 5.2e-05 | 3.04e-05 ± 4.7e-06 | 1.12e-08 ± 1.1e-08 | 1.83e-09 ± 9.4e-10 | 1.52e-11 ± 1.5e-11 | **1.24e-12 ± 6.0e-13** | *1.5e-13* | – |
+| Jaynes–Cummings (3000 samples) | 64 | 3 | 2.99e-04 ± 3.0e-04 | 2.20e-04 ± 2.7e-04 | 1.88e-09 ± 4.9e-10 | 4.10e-09 ± 2.5e-09 | 1.18e-11 ± 9.8e-13 | **3.70e-12 ± 1.3e-12** | *1.5e-13* | – |
 

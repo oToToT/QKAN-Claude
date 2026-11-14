@@ -47,6 +47,12 @@ TABLES = {
     "burnin": ("tables_final.md", "NARMA without the start-up transient"),
     "solar_parts": ("tables_final.md", "Solar cycle: final comparison"),
     "solar_grid": ("tables_final.md", "Solar cycle: the paper's learning-rate grid"),
+    # results/tables_code.md: the settings of the authors' released code
+    "code_repro": ("tables_code.md", "Reproduction with the authors' settings"),
+    "code_summary": ("tables_code.md", "Authors' datasets: per-dataset summary"),
+    "code_vs": ("tables_code.md", "Authors' datasets: QKAN-FWP-O against each model"),
+    "code_cells": ("tables_code.md", "Authors' datasets: all cells"),
+    "code_solar": ("tables_code.md", "Solar cycle with the file, split and model of the authors' code"),
     # results/tables_single_change.md
     "single_change": ("tables_single_change.md", "Time series: ablation"),
 }
