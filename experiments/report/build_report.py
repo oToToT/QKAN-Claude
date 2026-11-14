@@ -51,13 +51,18 @@ def main():
     ns = {}
     exec((HERE / "report_text.py").read_text(), ns)
     body = "".join(ns[name] for name in ORDER)
+    missing = []
     for name, (file, heading) in TABLES.items():
         if f"<<{name}>>" in body:
-            body = body.replace(f"<<{name}>>", table(file, heading))
+            try:
+                body = body.replace(f"<<{name}>>", table(file, heading))
+            except (KeyError, FileNotFoundError):
+                missing.append(name)
+                body = body.replace(f"<<{name}>>", "*（這張表的結果檔尚未產生；執行 `experiments/run_all.sh` 後重新組裝報告。）*")
     left = re.findall(r"<<\w+>>", body)
     assert not left, f"unresolved placeholders: {left}"
     (ROOT / "REPORT.md").write_text(body)
-    print(f"REPORT.md written: {len(body)} characters")
+    print(f"REPORT.md written: {len(body)} characters" + (f"; tables not available yet: {missing}" if missing else ""))
 
 
 if __name__ == "__main__":

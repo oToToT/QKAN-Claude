@@ -6,22 +6,22 @@
 | Damped SHM | 8.8e-06 | 1.2e-05 | 1.9e-06 | 3.2e-07 | **5.9e-12** | *9.0e-14* |
 | NARMA5 | 6.5e-06 | 2.3e-04 | 6.0e-06 | 2.9e-06 | **4.0e-07** | *1.3e-06* |
 | NARMA10 | 9.5e-06 | 6.9e-04 | 8.1e-06 | 2.7e-06 | **3.2e-07** | *1.7e-06* |
-| Delayed quantum control | 5.5e-06 | 4.4e-04 | 8.0e-06 | **3.5e-06** | – | *2.6e-07* |
+| Delayed quantum control | 5.5e-06 | 4.4e-04 | 8.0e-06 | 3.5e-06 | **2.2e-08** | *2.6e-07* |
 | Jaynes–Cummings | 7.6e-06 | 1.7e-05 | 7.4e-09 | **1.7e-09** | – | *1.1e-31* |
 
 ## Each model against every reference (geometric-mean test-MSE factor; in brackets: cells where the model is lower)
 
 | Reference | Params | QKAN-FWP+ (149) | HQKAN-Δ (136) | QKAN-FWP-O (130–154) |
 |---|---|---|---|---|
-| GQKAN-QKANFWP, paper protocol | 152 | 222× lower (19/19) | 873× lower (19/19) | 5.1e5× lower (19/19) |
-| GQKAN-QKANFWP, tuned lr | 152 | 19× lower (19/19) | 75× lower (19/19) | 4.4e4× lower (19/19) |
-| GQKAN-FWP, tuned lr | 114 | 30× lower (17/19) | 118× lower (19/19) | 6.9e4× lower (19/19) |
-| G-QKANFWP, tuned lr | 175 | 14× lower (18/19) | 55× lower (19/19) | 3.2e4× lower (19/19) |
-| QKAN-FWP+ | 149 | – | 3.9× lower (19/19) | 2282× lower (19/19) |
-| HQKAN-Δ | 136 | 3.9× higher (0/19) | – | 580× lower (18/19) |
-| *Printed for GQKAN-QKANFWP in arXiv:2605.06734* | 159 | 11× lower (18/19) | 44× lower (19/19) | 2.6e4× lower (19/19) |
-| *Best printed number of arXiv:2605.06734 and 2607.27945* | – | 1.9× lower (14/19) | 7.3× lower (16/19) | 4239× lower (18/19) |
-| *Linear AR(8), least squares* | 9 | 5.3e5× higher (2/19) | 1.3e5× higher (3/19) | 230× higher (10/19) |
+| GQKAN-QKANFWP, paper protocol | 152 | 223× lower (20/20) | 865× lower (20/20) | 4.2e5× lower (20/20) |
+| GQKAN-QKANFWP, tuned lr | 152 | 20× lower (20/20) | 78× lower (20/20) | 3.8e4× lower (20/20) |
+| GQKAN-FWP, tuned lr | 114 | 32× lower (18/20) | 124× lower (20/20) | 6.1e4× lower (20/20) |
+| G-QKANFWP, tuned lr | 175 | 15× lower (19/20) | 59× lower (20/20) | 2.9e4× lower (20/20) |
+| QKAN-FWP+ | 149 | – | 3.9× lower (20/20) | 1892× lower (20/20) |
+| HQKAN-Δ | 136 | 3.9× higher (0/20) | – | 488× lower (19/20) |
+| *Printed for GQKAN-QKANFWP in arXiv:2605.06734* | 159 | 11× lower (19/20) | 42× lower (20/20) | 2.0e4× lower (20/20) |
+| *Best printed number of arXiv:2605.06734 and 2607.27945* | – | 1.7× lower (14/20) | 6.6× lower (17/20) | 3230× lower (19/20) |
+| *Linear AR(8), least squares* | 9 | 3.3e5× higher (2/20) | 8.5e4× higher (3/20) | 174× higher (11/20) |
 
 ## All cells: test MSE (paper protocol, mean ± std over 5 seeds)
 
@@ -43,6 +43,7 @@
 | NARMA10 | 16 | 2.70e-03 ± 1.9e-03 | 5.24e-04 ± 4.5e-05 | 5.43e-04 ± 3.6e-05 | 4.79e-04 ± 9.5e-06 | 4.31e-06 ± 1.7e-06 | 2.14e-06 ± 3.3e-07 | **1.90e-06 ± 6.8e-07** | *3.1e-06* |
 | NARMA10 | 32 | 2.89e-03 ± 1.8e-03 | 5.56e-04 ± 3.1e-05 | 5.67e-04 ± 4.7e-05 | 7.21e-04 ± 4.2e-04 | 3.09e-06 ± 1.3e-06 | 9.47e-07 ± 3.1e-07 | **2.08e-08 ± 4.1e-09** | *4.8e-08* |
 | NARMA10 | 64 | 2.75e-03 ± 1.5e-03 | 5.83e-04 ± 5.1e-05 | 4.26e-03 ± 7.4e-03 | 5.18e-04 ± 2.4e-05 | 3.92e-06 ± 2.0e-06 | 6.43e-07 ± 2.6e-07 | **1.25e-08 ± 2.9e-09** | *4.7e-08* |
+| Delayed quantum control | 8 | 2.56e-03 ± 1.1e-03 | 5.83e-04 ± 1.5e-04 | 1.16e-03 ± 1.2e-04 | 5.75e-04 ± 1.3e-04 | 1.02e-05 ± 5.9e-06 | 3.51e-06 ± 1.4e-06 | **1.91e-07 ± 3.9e-08** | *2.3e-07* |
 | Delayed quantum control | 16 | 2.04e-03 ± 4.3e-04 | 4.63e-04 ± 1.3e-04 | 1.27e-03 ± 1.9e-04 | 4.72e-04 ± 6.8e-05 | 9.03e-06 ± 4.8e-06 | 5.92e-06 ± 5.4e-06 | **3.30e-08 ± 1.1e-08** | *3.0e-07* |
 | Delayed quantum control | 32 | 1.91e-03 ± 6.1e-04 | 3.96e-04 ± 9.7e-05 | 8.12e-04 ± 2.1e-04 | 3.15e-04 ± 9.4e-05 | 4.31e-06 ± 2.0e-06 | 2.65e-06 ± 1.6e-06 | **1.00e-08 ± 1.3e-09** | *3.0e-07* |
 | Delayed quantum control | 64 | 1.20e-03 ± 3.3e-04 | 3.37e-04 ± 8.5e-05 | 8.04e-04 ± 7.4e-05 | 3.15e-04 ± 1.1e-04 | 1.05e-05 ± 5.6e-06 | 2.80e-06 ± 1.6e-06 | **3.44e-09 ± 5.7e-10** | *2.4e-07* |
@@ -67,28 +68,29 @@
 | NARMA10 | 16 | 2.0e-06 | 4.3e-06 | 2.1e-06 | **1.9e-06** | 5.0e-05 | 3.1e-06 |
 | NARMA10 | 32 | 1.3e-05 | 3.1e-06 | 9.5e-07 | **2.1e-08** | 5.2e-05 | 4.8e-08 |
 | NARMA10 | 64 | 1.4e-05 | 3.9e-06 | 6.4e-07 | **1.2e-08** | 4.8e-05 | 4.7e-08 |
+| Delayed quantum control | 8 | 3.5e-06 | 1.0e-05 | 3.5e-06 | **1.9e-07** | 7.3e-05 | 2.3e-07 |
 | Delayed quantum control | 16 | 6.9e-06 | 9.0e-06 | 5.9e-06 | **3.3e-08** | 7.5e-05 | 3.0e-07 |
 | Delayed quantum control | 32 | 7.8e-06 | 4.3e-06 | 2.7e-06 | **1.0e-08** | 6.7e-05 | 3.0e-07 |
 | Delayed quantum control | 64 | 4.8e-06 | 1.1e-05 | 2.8e-06 | **3.4e-09** | 6.6e-05 | 2.4e-07 |
 
-- Linear AR(8) is lower than QKAN-FWP+ in 17/19 cells.
-- Linear AR(8) is lower than HQKAN-Δ in 16/19 cells.
-- Linear AR(8) is lower than QKAN-FWP-O in 9/19 cells.
-- Linear AR(8) is lower than the best printed number of the two papers in 16/19 cells.
+- Linear AR(8) is lower than QKAN-FWP+ in 18/20 cells.
+- Linear AR(8) is lower than HQKAN-Δ in 17/20 cells.
+- Linear AR(8) is lower than QKAN-FWP-O in 9/20 cells.
+- Linear AR(8) is lower than the best printed number of the two papers in 17/20 cells.
 
 ## QKAN-FWP-O ablation on the paper benchmarks (test MSE ÷ full model, geometric mean over the cells both have)
 
 | Variant | Params | All cells | Cells where the full model is better | Bessel J2 | Damped SHM | NARMA5 | NARMA10 | Delayed quantum control | Jaynes–Cummings |
 |---|---|---|---|---|---|---|---|---|---|
-| no fast weights (static observable R₀) | 79–103 | **202×** | 19/19 | 8436× | 1.6e4× | 5.2× | 6.7× | 52× | – |
-| sequential delta rule instead of the least-squares solve | 130–154 | **83×** | 16/18 | 886× | 3936× | 2.3× | 7.7× | 26× | – |
-| no gate (additive statistics, uniform weights) | 104–128 | **1.7×** | 12/18 | 1.2× | 0.51× | 3.1× | 7.2× | 1.5× | – |
-| constant gate (not input dependent) | 105–129 | **1.5×** | 14/19 | 0.91× | 0.94× | 1.2× | 5× | 1.3× | – |
-| one prior precision instead of one per feature | 106–130 | **1×** | 8/18 | 0.99× | 0.98× | 0.98× | 1.2× | 1× | – |
-| no base-activation (linear) term: Bloch features only | 112–136 | **5×** | 17/19 | 3.8× | 25× | 1.8× | 3.2× | 5.7× | – |
-| no Bloch features: linear term only (classical control) | 52–76 | **1.6×** | 13/19 | 0.5× | 3.2× | 1.6× | 1.4× | 3.3× | – |
-| 4 circuits instead of 6 | 88–104 | **1.7×** | 17/19 | 1.3× | 3.6× | 1.1× | 1.6× | 1.9× | – |
-| fixed token length 6 instead of min(8, N/2) | 142 | **2×** | 13/19 | 0.72× | 1.4× | 5.3× | 1.2× | 6.2× | – |
+| no fast weights (static observable R₀) | 79–103 | **190×** | 20/20 | 8436× | 1.6e4× | 5.2× | 6.7× | 54× | – |
+| sequential delta rule instead of the least-squares solve | 130–154 | **62×** | 18/20 | 886× | 3936× | 2.3× | 4.8× | 23× | – |
+| no gate (additive statistics, uniform weights) | 104–128 | **1.7×** | 14/20 | 1.2× | 0.51× | 3.1× | 4.7× | 1.4× | – |
+| constant gate (not input dependent) | 105–129 | **1.4×** | 15/20 | 0.91× | 0.94× | 1.2× | 4.6× | 1.2× | – |
+| one prior precision instead of one per feature | 106–130 | **1×** | 9/20 | 0.99× | 0.98× | 0.98× | 1.2× | 0.9× | – |
+| no base-activation (linear) term: Bloch features only | 112–136 | **4.7×** | 18/20 | 3.8× | 25× | 1.8× | 3.2× | 4.2× | – |
+| no Bloch features: linear term only (classical control) | 52–76 | **1.5×** | 13/20 | 0.5× | 3.2× | 1.6× | 1.4× | 2.2× | – |
+| 4 circuits instead of 6 | 88–104 | **1.7×** | 18/20 | 1.3× | 3.6× | 1.1× | 1.6× | 1.7× | – |
+| fixed token length 6 instead of min(8, N/2) | 142 | **1.9×** | 13/20 | 0.72× | 1.4× | 5.3× | 1.2× | 3.9× | – |
 
 ## Solar cycle: all models (528 → 132 months, paper protocol: peak-aware loss, best-validation checkpoint)
 
@@ -104,4 +106,14 @@ For every model the learning rate is the one with the lowest validation loss amo
 | QKAN-FWP-O | 547 | 0.0025 | 5 | 2.61 | 0.0134 ± 0.0005 | 33.1 ± 1.4 | 23.7 ± 1.1 |
 | *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | – | – | 0.0156 | 35.9 | 16.2 |
 | *Printed in arXiv:2605.06734 for GQKAN-QKANFWP* | 12,474 | – | 5 | – | 0.0168 ± 0.0016 | 39.59 ± 2.82 | 21.89 ± 1.57 |
+
+### 60/20/20 (test targets 1971–2026)
+
+| Model | Params | lr (by validation) | Seeds | Val. loss | Scaled MSE ↓ | PAE ↓ | PTE ↓ |
+|---|---|---|---|---|---|---|---|
+| GQKAN-QKANFWP (re-implemented baseline) | 12,423 | 0.0025 | 5 | 4.04 | 0.0175 ± 0.0006 | 76.2 ± 6.6 | 29.1 ± 2.0 |
+| QKAN-FWP+ | 11,732 | 0.0025 | 5 | 4.17 | 0.0184 ± 0.0012 | 65.9 ± 4.2 | 27.2 ± 1.5 |
+| QKAN-FWP-O without fast weights (static observable) | 496 | 0.0025 | 5 | 3.77 | 0.0137 ± 0.0001 | 67.1 ± 0.4 | 29.4 ± 0.9 |
+| QKAN-FWP-O | 547 | 0.0025 | 2 | 3.67 | 0.0142 ± 0.0001 | 62.3 ± 1.7 | 25.9 ± 3.2 |
+| *Reference: repeat the last cycle, 13-month smoothed (no training)* | 0 | – | – | – | 0.0166 | 53.1 | 18.7 |
 
