@@ -9,13 +9,17 @@ HEADER = r'''# Gated QKAN-FWP：重現、分析與改進
 
 對象論文：*Gated QKAN-FWP: Scalable Quantum-inspired Sequence Learning*（arXiv:2605.06734）。
 
-這份報告包含四件事：
+這份報告包含：
 
 1. 論文機制的整理，以及一份獨立的重新實作（論文沒有公開 fast-weight programmer 的程式）；
 2. 兩個在輸入表徵與讀出上改進的模型：**QKAN-FWP+**（保留論文的 gated fast-weight 架構）與 **HQKAN-Δ**（沒有 fast weights 的對照組）；
 3. 一個新的架構 **QKAN-FWP-O**：把 fast weights 從「電路的旋轉角」換成「電路的量測算符」，讓記憶可以用 context 內的預測誤差
    以封閉形式寫入；
-4. 對 benchmark 本身的檢查：線性參考線、與論文印出數字的可比性、以及幾個實作選擇的影響。
+4. 隔離收益來源的對照：同一個記憶換成古典特徵（Fourier、tanh、二次多項式、小型 MLP）、同樣的特徵換成別的記憶規則
+   （RLS、delta rule、不用 gate）、以及參數量相當的靜態模型；
+5. 這個架構放上量子硬體的代價與性質：電路執行次數與古典成本、有限量測次數、由 context 決定的量測基底，
+   以及對靜態硬體誤差的 in-context 校正（都是模擬）；
+6. 對 benchmark 本身的檢查：線性參考線、與論文印出數字的可比性、資料切分與幾個實作選擇的影響。
 
 所有模型都是 QKAN-based，參數量不超過論文的 159 個（太陽黑子：不超過 12,474 個）。
 所有數字皆由本 repo 的程式產生（`results/*.jsonl`），重現方式見第 11 節。
@@ -67,7 +71,7 @@ W_{t+1}     = g_t · W_t + (1 − g_t) · ΔW_t     # Eq. 3，g_t ∈ [0,1] 是�
 | A3 | 每一步只看到一個純量 `x_t` | Proposal 與 gate 是 *context-free*：同一個數值在上升段與下降段得到完全相同的 `ΔW_t`、`g_t` | 把 `x_t` 換成因果 patch，並用**差分座標** `(x_t, Δx_t, Δ²x_t, …)`（各階差分正規化到單位變異） | PatchTST（2211.14730）；Takens delay embedding | 同上 |
 | B1 | 單一純量 gate | 所有 fast weights 共用同一個記憶時間尺度 | 分組／逐座標 gate | **CMG（2607.27945）**；RWKV-7（2503.14456）、Mamba（2312.00752）、xLSTM（2405.04517）、HGRN（2311.04823） | QKAN-FWP+（每個電路一個 gate）；CMG baseline |
 | B2 | Gate 用預設初始化（g ≈ 0.5） | 初始記憶長度只有約 2 步，N 大時早期輸入的梯度一開始就消失 | Chrono initialization：gate bias 設成對數等距的時間尺度 | Tallec & Ollivier（1804.11188）、UR-LSTM（1910.09890）、LRU（2303.06349） | QKAN-FWP+、QKAN-FWP-O |
-| B3 | 更新是實數、逐元素的 `Θ_t = A_t⊙Θ_{t−1} + B_t`，`A_t ≥ 0` | 逐元素相乘可交換，記不住順序；每個座標只是一條指數移動平均 | 複數／旋轉／非交換的轉移 | Grazzi et al.（ICLR 2025）、DeltaProduct（2502.10297）、AUSSM、HyperSSM（2611.17162） | 未實作，理由見 2.1 節 |
+| B3 | 更新是實數、逐元素的 `Θ_t = A_t⊙Θ_{t−1} + B_t`，`A_t ≥ 0` | 每個座標是一條以 gate 為係數的仿射遞迴：後面的 token 只能逐座標地縮小先前寫入的內容，不能改變它的符號、把座標互相混合，或產生振盪的記憶核（適用範圍見 2.1 節） | 複數／旋轉／非交換的轉移 | Grazzi et al.（ICLR 2025）、DeltaProduct（2502.10297）、AUSSM、HyperSSM（2611.17162） | 未實作，理由見 2.1 節 |
 | B4 | `ΔW_t`、`g_t` 與 fast network 的預測誤差無關（**開迴路**） | 記憶是「每個 token 各猜一次再加權平均」；預測從未和下一個觀測值比較 | 誤差驅動的寫入：delta rule、in-context 最小平方 | Schlag et al.（2102.11174）、DeltaNet（2406.06484）、Titans（2501.00663）、MesaNet（2506.05233）、ALPaCA（1807.08912） | **QKAN-FWP-O**（3.3 節） |
 | C1 | 只有最後一步有 loss | 每個 window 只有一個監督訊號 | Context 內每一步都是一個監督配對 | — | QKAN-FWP-O（配對用在寫入，不是 loss） |
 | C2 | Slow decoder 直接輸出所有 fast weights | 太陽黑子模型 12.5k 參數中約 8.8k 在這個線性層 | Low-rank／outer-product hypernetwork；或讓 fast weights 不需要由網路產生 | QFWP 的 `L ⊗ Q`（2402.17760） | QKAN-FWP-O（太陽黑子約 500 個參數） |
@@ -75,9 +79,17 @@ W_{t+1}     = g_t · W_t + (1 − g_t) · ΔW_t     # Eq. 3，g_t ∈ [0,1] 是�
 
 ### 2.1 一個考慮過但沒有實作的方向：旋轉（SU(2)）gate
 
-原論文、Self-Modulating 與 CMG 的 `A_t` 都是實數、逐元素的。fast programmer 的每個電路本來就是 SU(2) 的元素，
-所以針對 B3 最自然的推廣是讓 gate 也是旋轉（單位四元數）：$q_t = g_t\,p_t \otimes q_{t-1} + (1-g_t)\,d_t$，
-CMG 是 $p_t = 1$ 的特例，有界性與 prefix scan 都還在。這個方向在線性遞迴模型的文獻裡已經被完整處理：
+原論文、Self-Modulating 與 CMG 的 `A_t` 都是實數、逐元素的。這**不表示**這些模型分不出順序：仿射遞迴本身對順序敏感
+（$h \leftarrow 0.5h + 0.5x$ 從 0 開始，輸入 $[1,2]$ 得 1.25，輸入 $[2,1]$ 得 1），gate 也讓越新的寫入權重越大。
+限制比較窄，來自齊次部分 $\prod_t A_t$：
+
+- 它是逐座標的實數乘積，彼此可交換。在 state-tracking 的設定下——沒有輸入項、要靠轉移本身把一串群運算累積起來
+  （$\Theta_T = A_T\cdots A_1\Theta_0$）——這樣的模型只能表示交換群；$A_t \ge 0$ 時連 parity 都不行（Grazzi et al.）。
+- 記憶核 $\beta_k$ 逐座標非負：第 $k$ 步寫入的內容之後只會被縮小，不會被旋轉或變號。
+
+fast programmer 的每個電路本來就是 SU(2) 的元素，所以最自然的推廣是讓 gate 也是旋轉（單位四元數）：
+$q_t = g_t\,p_t \otimes q_{t-1} + (1-g_t)\,d_t$，CMG 是 $p_t = 1$ 的特例，有界性與 prefix scan 都還在。
+這個方向在線性遞迴模型的文獻裡已經被完整處理：
 
 | 文獻 | 內容 |
 |---|---|
@@ -181,9 +193,14 @@ $$R_T \;=\; R_0 + \Big(\Lambda_0 + \sum_t \beta_t k_t k_t^\top\Big)^{-1} \sum_t 
 | 寫入 | 開迴路：$\Delta_t, g_t$ 只看 $x_t$ | 閉迴路：由 context 內的預測誤差決定 |
 | 遞迴 | $\Theta_t = g\Theta_{t-1} + (1-g)\Delta_t$ | 同一個遞迴，作用在 $(C, b)$ |
 | 封閉形式（Eq. 4）／prefix scan | 有 | 有（對 $(C,b)$；最後多一次 $F\times F$ 的線性求解，$F \le 25$） |
-| 有界性 | $\Theta_T$ 在 proposal 的凸包內 | $C_T$ 在 $\{\Lambda_0 + k_tk_t^\top\}$ 的凸包內，且 $C_T \succeq \Lambda_0 \succ 0$，求解恆為良態 |
+| 有界性 | $\Theta_T$ 在 proposal 的凸包內 | $C_T$ 在 $\{\Lambda_0 + k_tk_t^\top\}$ 的凸包內，且 $C_T \succeq \Lambda_0 \succ 0$：求解恆有唯一解。這只保證可逆，**不保證數值上良態**（條件數見下） |
 | 量子電路是否依賴記憶 | 是（fast 角度逐樣本不同） | 否：所有 token 跑同一組固定電路、量 X／Y／Z 三個基底，記憶只出現在古典後處理 |
 | 電路深度與 $T$ | 無關 | 無關 |
+
+**可逆不等於良態。** $C_T \succeq \Lambda_0$ 給出的條件數上界是
+$\kappa(C_T) \le \big(\lambda_{\max}(\Lambda_0) + \sum_t\beta_t\|k_t\|^2\big)/\lambda_{\min}(\Lambda_0)$，先驗精度很小時這個上界很大
+（例如 $\mathrm{diag}(1+10^{-10}, 10^{-10})$ 是正定的，條件數卻是 $10^{10}$）。實際量到的條件數在論文的 benchmark 上是
+$10^5$–$10^6$，在有雜訊的系統族上約 $10^2$（5.4、7.2 節），單精度與有限量測次數下的行為也在那裡量測。
 
 兩個實作細節，不做會出問題：
 
@@ -203,21 +220,43 @@ $O(F^2)$ 的秩一更新。先驗只放在初始值的寫法可以做秩一更�
 <<cost>>
 
 在這個大小下，求解的成本和特徵（電路）的計算同一個量級，delta rule 在本實作中也沒有比較快（它是 Python 迴圈）；
-它的優勢是漸近的複雜度與不需要矩陣運算。精度上的代價則很明確：論文 benchmark 上 delta rule 差 62 倍，無雜訊的系統族上差
-4–1100 倍，只有誤差由雜訊主導時（noise 0.02 的系統族）兩者相當（5.4 節、第 6 節）。所以取捨是：需要高精度時用封閉形式；
-$F$ 很大、需要逐步輸出、或雜訊主導時，delta rule 是合理的近似。
+它的優勢是漸近的複雜度與不需要矩陣運算。精度的比較（5.4 節、第 6 節）只涵蓋本報告實作的幾種規則——掃一次與掃四次的
+normalised delta rule，以及先驗只放在初始值的指數加權 RLS——不能推論到所有誤差驅動或遞迴最小平方的方法。
 
-**定位。**
+參數量之外的資源（`experiments/resources.py`；「circuit runs」是一個電路對一個輸入的執行次數，QKAN-FWP-O 的每次執行要量
+X、Y、Z 三個不對易的基底）：
 
-- *不新*：在學到的特徵上做 in-context 最小平方／Bayesian 線性回歸——ALPaCA（Harrison et al., 2018）、R2D2
-  （Bertinetto et al., 2019）、mesa-layer（von Oswald et al., 2023）；誤差驅動的 fast-weight 寫入——delta rule
-  （Schlag et al., 2021）、DeltaNet、Titans；可訓練或由網路產生的量測算符——arXiv:2505.13525（開迴路）。
-- *本報告的貢獻*（以文獻搜尋所及為限）：(i) 指出 QKAN 層對量測算符是線性的，所以 QKAN-FWP 的 fast weights 可以有封閉形式的
-  最佳寫入；(ii) 這個寫入的充分統計量恰好服從論文的 gated 遞迴，因此 Eq. 4、凸包有界與 prefix scan 都保留；
-  (iii) QFWP 這一系列模型中第一個閉迴路的寫入規則。
-- *不主張量子優勢*：reps = 1 時每個電路的三個特徵就是 $u$ 的一次諧波，整個模型可以古典模擬；把 Bloch 特徵換成同樣數目的
-  古典 tanh 特徵、記憶不變，結果也相同（5.4 節、第 6 節）。這個架構要說的是「QKAN-FWP 的 fast weights 該放在哪裡」，
-  不是「量子特徵比較好」。
+<<resources>>
+
+- **一步預測**：QKAN-FWP-O 的量子成本（執行次數 × 量測基底數）和角度空間的模型同一個量級，不比較省；古典側比較貴——
+  每個視窗要存 350 個數字的統計量（$C_T$ 的上三角與 $b_T$），而不是 16 個角度，乘加次數也多一個量級。參數少不等於運算量小。
+- **不需要重新載入閘角度**：角度空間的 FWP 每一次預測都要把一組新的 fast 角度載入電路；QKAN-FWP-O 的電路固定，
+  記憶只出現在量測結果的古典後處理。
+- **多輸出不增加量子成本**：每個輸出只是同一批量測結果上的另一個量測算符。太陽黑子任務（132 個月的輸出）因此只用 6 個電路、
+  每次預測 540 次執行，論文規模的模型是 300 個電路、約 5 萬次執行。
+
+**把 fast weights 放在量測算符，得到的是什麼。**
+
+- *能力*：閉迴路的寫入。模型可以在 context 內辨識系統（第 6 節），角度空間、開迴路的 QKAN-FWP 與 CMG 做不到。
+- *理論性質*：最佳寫入有封閉形式；它的充分統計量服從論文的 gated 遞迴（Eq. 4、凸包、prefix scan 都保留）；
+  求解恆有唯一解；讀出對記憶是線性的，所以查詢電路可以只量「context 剛決定的那一個量測算符」（7.3 節）。
+- *資源*：電路與記憶無關，不必逐次載入角度；多輸出不增加電路；代價是三個量測基底與較大的古典狀態（上表）。
+- *硬體誤差*：context 與 query 在同一台裝置上量測，所以兩者共同的靜態誤差（讀出誤差、去極化、過旋轉）會被 context 內的求解吸收，
+  不需要校正電路或重新訓練；角度空間的模型與靜態模型的讀出權重是固定的，沒有這個機制（7.4 節）。
+- *不是什麼*：reps = 1 時一個電路的三個 Bloch 分量都落在 $\mathrm{span}\{1, \cos u, \sin u\}$（數值驗證到 $10^{-15}$），
+  所以特徵本身就是一次諧波的 Fourier 特徵。把它換成古典的 Fourier、tanh、多項式或小型 MLP 特徵而記憶完全不變，
+  結果相當或更好（5.4 節、第 6 節）。這個架構的貢獻在「量子 FWP 的 fast weights 該放在哪裡、要付出多少量子資源」，
+  不在特徵映射，也不主張量子優勢。
+
+**與既有工作的關係。**
+
+- 在學到的特徵上做 in-context 最小平方／Bayesian 線性回歸是既有的做法——ALPaCA（Harrison et al., 2018）、R2D2
+  （Bertinetto et al., 2019）、mesa-layer（von Oswald et al., 2023）；誤差驅動的 fast-weight 寫入也是——delta rule
+  （Schlag et al., 2021）、DeltaNet、Titans；可訓練或由網路產生的量測算符見 arXiv:2505.13525（開迴路）。
+- 就文獻搜尋所及，量子 FWP 這一系列（arXiv:2402.17760、2605.06734、2606.24933、2607.02363、2607.27945）的 fast weights
+  都是閘的角度、寫入都是開迴路。本報告新增的是：(i) 指出 QKAN 層對量測算符是線性的，因此 fast weights 可以有封閉形式的
+  最佳寫入；(ii) 這個寫入的充分統計量恰好服從論文的 gated 遞迴；(iii) 由此得到電路與記憶無關的量子 FWP、
+  可由 context 決定量測基底的讀出，以及對靜態硬體誤差的 in-context 校正。
 
 ### 3.4 太陽黑子用的模型
 
@@ -240,7 +279,9 @@ SETUP = r'''## 4. 實驗設定
 
 ### 4.1 資料
 
-`qkanfwp/data.py`：方程式與參數照論文。論文沒寫 Bessel / SHM / DQC 的取樣點數，這裡統一用 300 點
+`qkanfwp/data.py`：方程式與參數照論文。論文把六個資料集都當成單變數序列：給過去 N 個觀測值
+$[x_{t-N},\dots,x_{t-1}]$，預測 $x_t$（論文 6.1 節）。NARMA 也是如此——輸入 $u_t$ 只用來產生序列 $y_t$，模型讀的是 $y$ 的歷史、
+預測下一個 $y$；這和 reservoir computing 文獻裡「讀 $u$、輸出 $y$」的標準 NARMA 任務不同，本報告沒有做後者。論文沒寫 Bessel / SHM / DQC 的取樣點數，這裡統一用 300 點
 （NARMA 的 M = 300 與 JC 的 3000 點是論文給的）。因此 **time-series 的 MSE 絕對值不能直接和論文 Table 3–6 比**（5.3 節）。
 太陽黑子用的是同一份 SILSO V2.0 月資料前 3,326 筆，絕對值可以和論文 Table 7 比。
 
@@ -256,13 +297,16 @@ SETUP = r'''## 4. 實驗設定
   | GQKAN-QKANFWP（152） | 3e-2 | 1e-2 |
   | GQKAN-FWP（114） | 1e-1 | 3e-2 |
   | G-QKANFWP（175） | 3e-2 | 1e-2 |
-  | CMG（188）、CMG＋Δ-token＋residual（173） | 3e-2（沿用上面兩類模型選出的值） | 1e-2／3e-2 |
+  | CMG（188）、CMG＋Δ-token＋residual（173） | 由 validation 選，見下表 | 由 validation 選，見下表 |
+
+<<cmg_lr>>
   | QKAN-FWP+、HQKAN-Δ、QKAN-FWP-O | 3e-2 | 3e-2 |
 
 ### 4.3 模型選擇只用 validation
 
-所有設計決定（baseline 配置、token 長度、gate 分組、寬度、lr）都只用 70/10/20 split 的 validation 部分
+所有設計決定（baseline 配置、token 長度、gate 分組、寬度、每個模型的 lr）都只用 70/10/20 split 的 validation 部分
 （`results/dev_*.jsonl`）。最終數字用論文的 80/20 split、seeds 0–4，這些 run 沒有參與任何決定。
+系統族用自己的 validation 序列；太陽黑子用論文協定裡的 validation split（切分方式見第 8 節）。
 
 ### 4.4 比較規則
 
@@ -282,7 +326,9 @@ SETUP = r'''## 4. 實驗設定
 | NARMA | M = 300，從 0 起跳，沒有 burn-in | M = 300，其餘未說明 | 暫態在 N = 8 時進入訓練目標；5.6 節 |
 | Bessel / SHM / DQC 的取樣點數 | 各 300 點 | 未說明 | 絕對 MSE 不可比 |
 | 層的大小 | 在 validation 上從 5 種配置中選（3.1 節） | 只給總參數量 | — |
-| 數值精度 | QKAN-FWP-O 預設 float64；其餘模型 float32（所有模型的 token 與差分都先用 float64 形成） | — | 5.4、7.2 節：QKAN-FWP-O 改成 float32 後 Bessel、SHM 與 JC 的數字不變，整體差 1.2 倍；拿掉記憶的 float64 靜態版本則差一到四個數量級。差距不是精度造成的 |
+| 數值精度 | 所有模型與所有封閉形式的參考線都用 **float32 的 targets**（輸入是 float64）；QKAN-FWP-O 內部預設 float64，其餘模型 float32 | — | MSE 低於約 $10^{-15}$ 就是 targets 的捨入誤差，不代表模型好壞；計算倍數與勝負時一律先截在 $10^{-15}$。QKAN-FWP-O 改成 float32 的結果見 5.4、7.2 節 |
+| NARMA 的任務定義 | 讀 $y$ 的歷史、預測下一個 $y$ | 相同（論文 6.1 節） | 不是「讀 $u$ 預測 $y$」的標準 NARMA 任務 |
+| 太陽黑子的切分 | 同時報告論文的切法與依 target 時間切分的結果 | 對 sliding window 的索引做 80/10/10 | 論文的切法讓相鄰 split 的 targets 重疊 131 個月（第 8 節） |
 
 ---
 
@@ -320,19 +366,26 @@ NEGATIVE = r'''## 9. 沒有效果、或要小心的地方
 - 這是**獨立的重新實作**，不是官方程式，而且**沒有重現論文印出的 baseline 數字**（5.3 節）；層的大小、取樣點數等論文
   未給的細節是在這裡選的（3.1、4.5 節），所以 time-series 的絕對 MSE 與論文表格的比較只能參考。CMG 也是依論文敘述重新實作的。
 - 六個 time-series benchmark 幾乎是線性問題（5.2 節）。在它們上面，MSE 排名主要反映「誰把一個接近線性的映射擬合得比較準」。
-- QKAN-FWP-O 的 in-context 最小平方本身是既有的做法（3.3 節）；它的量子部分可以古典模擬，而且換成同樣大小的古典 tanh 特徵
-  結果相同（5.4、6 節）。本報告沒有找到量子電路特徵帶來好處的任務。
-- 有限量測次數的影響只做了統計雜訊的模擬（第 7 節），沒有閘誤差與退相干的模型，也沒有真機實驗。在需要非線性特徵的任務上，
-  QKAN-FWP-O 對靜態模型的優勢需要每個電路約 $10^4$ 次以上的量測。
+- **特徵映射不是收益的來源，也不主張量子優勢。** reps = 1 的 Bloch 特徵等於一次諧波的 Fourier 特徵；把它換成古典的 Fourier、tanh
+  或小型 MLP 特徵而記憶不變，結果相當或更好，二次多項式在函數形式吻合的 Hénon map 上更好（5.4、6.2 節）。整個模型可以古典模擬。
+  本報告沒有找到量子電路特徵帶來好處的任務；QKAN 的表述帶來的是第 7 節那些和硬體執行有關的性質，而古典特徵的版本根本不需要硬體。
+- QKAN-FWP-O 的 in-context 最小平方本身是既有的做法（3.3 節）。
+- **NARMA 的任務定義照論文**：讀 $y$ 的歷史、預測下一個 $y$。Reservoir computing 文獻裡標準的 NARMA 任務是讀輸入 $u$、輸出 $y$；
+  那個版本需要多通道的輸入，本報告沒有做，所以這裡的 NARMA 數字不能和那類文獻的數字比較。
+- **記憶規則的比較只涵蓋本報告實作的幾種**：每次寫入都帶先驗的 gated 最小平方、先驗只當初始值的指數加權 RLS、不用 gate 的最小平方、
+  掃一次與掃四次的 normalised delta rule。其他誤差驅動或遞迴最小平方的方法（不同的步長、動量、Kalman 形式的更新）沒有測。
+- **硬體相關的結果都是模擬**（第 7 節）：有限量測次數只有統計雜訊；硬體誤差只有靜態的讀出誤差、去極化與過旋轉，
+  沒有 crosstalk、與時間相關的雜訊，也沒有和 shot 雜訊同時模擬；沒有真機實驗。In-context 校正只對視窗內不變的誤差成立。
+  在需要非線性特徵的任務上，QKAN-FWP-O 對靜態模型的優勢需要每個電路約 $10^4$ 次以上的量測。
 - 論文以多 qubit VQC 為 fast programmer 的三個模型（QFWP、G-QFWP、GQKAN-QFWP）沒有重新實作。
 - MiniGrid 強化學習（論文 Sec. 6.3）沒有做；論文 Table 7 的 classical baselines（LSTM、WaveNet-LSTM、MESN…）也沒有重跑。
 - lr 只掃了 cosine schedule 下的少數幾個值；模型設定是在少數候選中用 2–3 個 validation seed 選的，候選之間的差距
   有些在 seed 雜訊之內。
-- 太陽黑子的結論受評估期間影響很大（第 8 節）。
+- 太陽黑子的結論受切分方式與評估期間影響很大（第 8 節）。
 - 系統族（第 6 節）是本報告自己設計的任務；設計目的是讓 in-context 辨識成為必要，因此對閉迴路的模型有利。
-  表中同時列出知道系統為線性的 oracle，以便判斷差距。
-- 可以延伸的方向：把開迴路的角度記憶（CMG）和閉迴路的量測算符記憶疊在一起；多 qubit 電路上以局部 Pauli 算符為特徵
-  （同一批量測資料可同時估計多個算符）；需要非交換記憶的任務（2.1 節）。
+  表中同時列出知道函數形式的封閉形式參考線，以便判斷差距。
+- 可以延伸的方向：多 qubit 電路上以局部 Pauli 算符為特徵（同一批量測資料可同時估計多個算符）；把 shot 預算依 $|\mathbf R_i|$
+  分配給 query 的各個電路；把開迴路的角度記憶和閉迴路的量測算符記憶疊在一起；需要非交換記憶的任務（2.1 節）。
 
 ---
 
@@ -341,7 +394,7 @@ NEGATIVE = r'''## 9. 沒有效果、或要小心的地方
 ```bash
 pip install -r requirements.txt
 python -m pytest tests -q               # 單元測試
-bash experiments/run_all.sh             # 全部實驗（約 25 CPU core-hours；已完成的 job 會自動跳過）
+bash experiments/run_all.sh             # 全部實驗（約 35 CPU core-hours；已完成的 job 會自動跳過）
 python experiments/make_figures.py      # results/tables_final.md、tables_single_change.md 與 figures/
 python experiments/make_om_report.py    # results/tables_om.md 與 figures/om_*.png
 python experiments/report/build_report.py   # 由 experiments/report/report_text.py 與上述表格組出 REPORT.md
@@ -350,10 +403,13 @@ python experiments/report/build_report.py   # 由 experiments/report/report_text
 | 模型 | variant 名稱 |
 |---|---|
 | 重新實作的 GQKAN-QKANFWP（論文協定／調過 lr） | `base`／`base@cos30`（JC：`base@cos10`） |
-| CMG | `cmg`、`cmg@cos10`、`cmg@cos30`、`cmg_plus@cos30` |
+| CMG | `cmg`、`cmg_plus`（＋Δ-token＋residual），lr 由 `results/dev_cmg.jsonl` 的 validation 決定 |
 | QKAN-FWP+ | `pmx_diff8_edge_h3l2@cos30`（太陽黑子：`mtg_cyc_pm`） |
 | HQKAN-Δ | `ar_hqkan8@cos30` |
 | QKAN-FWP-O | `om_c0h6r1_p5@cos30`（太陽黑子：`om`；靜態版本 `om_static`） |
+| 同一個記憶、不同特徵 | `om_c0h6r1_p5_fourier1`、`om_c0h8r1_p5_fourier1`、`_fourier`、`_tanh`、`_poly2`、`_mlp`、`_classical` |
+| 同樣的特徵、不同記憶規則 | `_rls`、`_gnone`、`_delta`、`_delta4`、`_static`、`om_c0h9r1_p5_static`（參數量相當的靜態模型） |
+| 物理的 ⟨Z⟩ 讀出（有限量測次數與硬體誤差的實驗） | variant 名稱加 `+z` |
 
 `@cos30` 表示 cosine schedule、初始 lr 30e-3；`results/README.md` 說明每個結果檔的內容。
 環境：Python 3.13、PyTorch 2.15（CPU）、`qkan` 0.2.3（只用於測試對照）。
@@ -421,17 +477,22 @@ RESULTS_TS = r'''## 5. 結果：論文的六個 time-series benchmark
 
 <<ts_matrix>>
 
-- **QKAN-FWP-O** 比重新實作的 GQKAN-QKANFWP（調過 lr）低五個數量級（幾何平均），比 CMG 與另外兩個論文變體低四到五個數量級；
-  它比同樣 token 與讀出的 QKAN-FWP+ 低三個數量級以上，比沒有記憶的 HQKAN-Δ 低約 700 倍（24 格中 23 格較低，
-  只有 NARMA5 的 N = 8 那一格略遜）。
-- **CMG**：照 CMG 論文的設定（純量 token、188 參數）在調過 lr 之後和 scalar gate 的 baseline 同一個水準（Bessel 與 SHM 較好，
-  NARMA 與 DQC 沒有改善）。給它相同的 Δ-token 與 residual 讀出之後，它比 QKAN-FWP+ 好 1.8 倍——逐權重的 gate 與先寫後讀
-  有小幅幫助——但仍然輸給沒有記憶的 HQKAN-Δ。
-- **HQKAN-Δ 在每一格都比 QKAN-FWP+ 好**，也在幾乎每一格比 CMG 好：在這些 benchmark 上，「由 slow programmer 產生旋轉角」
-  這種型態的記憶沒有幫助，把同樣的參數放進靜態網路反而更好。因為這個結論重要，QKAN-FWP+ 與 HQKAN-Δ 另外各加跑 10 個 seed
+整體的幾何平均會掩蓋資料集之間的差異，所以把 QKAN-FWP-O 對每個模型的倍數按資料集分開（大於 1 表示 QKAN-FWP-O 較低）：
+
+<<ts_bydataset>>
+
+- **逐格的結果。** QKAN-FWP-O 在 24 格全部低於重新實作的 GQKAN-QKANFWP、CMG 與 QKAN-FWP+；對沒有記憶的 HQKAN-Δ 是 24 格中 23 格較低，
+  **NARMA5 的 N = 8 那一格輸**（1.68e-5 對 1.41e-5）。
+- **差距的大小依資料集而定，不能用一個數字概括。** 對 HQKAN-Δ：Bessel 與 Damped SHM 低四到五個數量級，Jaynes–Cummings 低三個數量級，
+  DQC 低兩個數量級，**NARMA 只低 7–9 倍**。整體幾何平均（683 倍）主要由那三條幾乎線性的序列決定；
+  其中 Jaynes–Cummings 的差距來自線性項與數值精度，不是來自記憶（5.4 節）。
+- **CMG**：照 CMG 論文的設定（純量 token、188 參數），lr 由 validation 選出後和 scalar gate 的 baseline 同一個水準。
+  給它相同的 Δ-token 與 residual 讀出之後，它和 QKAN-FWP+ 相當或略好，但仍然輸給沒有記憶的 HQKAN-Δ。
+- **HQKAN-Δ 在每一格都比 QKAN-FWP+ 好**：在這些 benchmark 上，「由 slow programmer 產生旋轉角」這種型態的記憶沒有幫助，
+  把同樣的參數放進靜態網路反而更好。因為這個結論重要，QKAN-FWP+ 與 HQKAN-Δ 另外各加跑 10 個 seed
   （`results/extra_seeds.jsonl`，5 個序列 × N ∈ {16, 64}）：15 個 seed 合計 HQKAN-Δ 好 2.5 倍，10 格中贏 9 格。
 - QKAN-FWP-O 相對 HQKAN-Δ 的差距因此不是「加了記憶就會好」，而是**記憶的型態**：開迴路的角度記憶沒有用，
-  閉迴路的量測算符記憶有用（5.4 節的消融）。
+  閉迴路的量測算符記憶有用（5.4 節的對照）。
 
 完整的表：
 
@@ -440,14 +501,17 @@ RESULTS_TS = r'''## 5. 結果：論文的六個 time-series benchmark
 ### 5.2 線性參考線：這組 benchmark 有多難
 
 最簡單的參考模型是線性自迴歸 `x̂_t = w·(x_{t−p}, …, x_{t−1}) + c`，用最小平方法在**同樣的訓練 window** 上解出來
-（`experiments/reference_baselines.py`），不需要梯度訓練，參數量是 p + 1。
+（`experiments/reference_baselines.py`），不需要梯度訓練，參數量是 p + 1。它和所有模型一樣以 **float32 的 targets** 評分
+（輸入是 float64）；targets 的捨入誤差讓 MSE 的下限落在 $10^{-16}$ 左右，所以低於 $10^{-15}$ 的數字彼此沒有差別，
+計算倍數與勝負時一律先截在 $10^{-15}$。
 
 <<ts_linear>>
 
-- 六個序列的一步預測幾乎是線性問題。**9 個參數的線性 AR(8) 在大多數格子贏過兩篇論文印出的最佳數字**，也贏過
-  QKAN-FWP+ 與 HQKAN-Δ。Jaynes–Cummings 是「衰減的常數項＋衰減的餘弦」，嚴格滿足三階線性遞迴，AR(3) 就到機器精度。
-- QKAN-FWP-O 在 NARMA 與 DQC（不是嚴格線性遞迴的序列）的 11 格低於線性 AR(8)；在 Bessel、Damped SHM、Jaynes–Cummings
-  這些嚴格（或幾乎）線性的序列上，float64 的最小平方解到了 1e-13 ～ 1e-31，沒有任何以梯度訓練的模型追得上。
+- 六個序列的一步預測幾乎是線性問題。**9 個參數的線性 AR(8) 在 24 格中的 21 格贏過兩篇論文印出的最佳數字**，也在 21–22 格贏過
+  HQKAN-Δ 與 QKAN-FWP+。Jaynes–Cummings 是「衰減的常數項＋衰減的餘弦」，嚴格滿足三階線性遞迴，AR(3) 就到 targets 的捨入誤差。
+- **QKAN-FWP-O 與線性 AR(8) 各有勝負**：在 NARMA 與 DQC（不是嚴格線性遞迴的序列）的 11 格 QKAN-FWP-O 較低（低 3–12 倍），
+  在 Bessel、Damped SHM、Jaynes–Cummings 的 12 格與 NARMA5 的 N = 64 線性 AR(8) 較低：在那三條序列上線性最小平方解到了
+  $10^{-13}$ ～ $10^{-16}$（已接近 targets 的捨入誤差），QKAN-FWP-O 是 $10^{-13}$ ～ $10^{-11}$。
 - 因此在這六個序列上比較 MSE，比的主要是「誰把一個接近線性的映射擬合得比較準」。QKAN-FWP-O 之所以大幅領先其他
   神經模型，正是因為它在 context 內直接解最小平方，繞過了「用 SGD 把線性映射逼近到很多位有效數字」這件事。
   要檢驗記憶機制本身，需要第 6 節那種固定預測器不夠用的任務。
@@ -553,9 +617,12 @@ Fast weights 只有在「視窗裡有慢參數存不下來的資訊」時才有�
 | Duffing | $\ddot x + d\dot x + ax + bx^3 = 0$，$(d,a,b)$ 隨機 |
 
 「noise 0.02」是加在觀測值上的白雜訊（序列已正規化到約 $[-1,1]$）。每個神經模型都掃同樣的三個 lr
-（3e-3、1e-2、3e-2，cosine、40 epochs、batch 32），lr 與 checkpoint 都由 validation 決定。三條參考線不需要訓練：
-重複上一個值、所有序列共用一個線性 AR(p)、以及**在每個視窗內各自擬合的 ridge AR(q)**
-（階數、ridge 強度與是否含截距由 validation 選；它知道系統是線性的，是線性族上很強的 oracle）。
+（3e-3、1e-2、3e-2，cosine、40 epochs、batch 32），lr 與 checkpoint 都由 validation 決定。四條參考線不需要訓練，
+超參數都由 validation 選：重複上一個值；所有序列共用一個線性 AR(p)；**在每個視窗內各自擬合的 ridge AR(q)**；
+以及在每個視窗內對兩個 lag 的二次特徵 $[1, x_t, x_{t-1}, x_t^2, x_tx_{t-1}, x_{t-1}^2]$ 擬合的 ridge
+（它用到視窗內全部 14 個配對；對無雜訊的 Hénon map 它就是正確的函數形式）。
+
+### 6.1 和其他架構比
 
 ![families](figures/om_family.png)
 
@@ -563,48 +630,65 @@ Fast weights 只有在「視窗裡有慢參數存不下來的資訊」時才有�
 
 <<fam_vs>>
 
-表中倒數第二、三列是 QKAN-FWP-O 的對照組：把 Bloch 特徵換成同樣數目的古典特徵 $\tanh(wu+b)$ 或 $\cos(wu+b)$
-（每個 hidden unit 三個、$w, b$ 可訓練；166 個參數），**記憶與求解完全相同**。下面先和其他架構比，再看這兩個對照組。
-
 - **沒有雜訊時**，QKAN-FWP-O 在五個族都比其他架構低，比其餘最好的架構低 15 倍（Hénon、Duffing）到 2 萬倍（阻尼振盪）。
-  其他模型彼此差不多：有記憶的 QKAN-FWP+、CMG、LSTM 和沒有記憶的 HQKAN-Δ 在同一個量級，開迴路的記憶最多帶來 2–3 倍。
+  其他架構彼此差不多：有記憶的 QKAN-FWP+、CMG、LSTM 和沒有記憶的 HQKAN-Δ 在同一個量級，開迴路的記憶最多帶來 2–3 倍。
 - **有雜訊時**差距縮小（不可約的誤差約為雜訊變異數 4e-4）：QKAN-FWP-O 在四個族比其他架構低（比次佳的低 1.1–2.3 倍），
   在 Hénon 上和 QKAN-FWP+ 打平。
-- **對線性參考線**：
+- **對封閉形式的參考線**，結果要分開看：
   - 「所有序列共用一個線性 AR」在 10 格中輸 9 格（只在無雜訊的 Jaynes–Cummings 上較好）。
-  - 「在視窗內擬合 ridge AR」在無雜訊的線性族上是精確解（1e-15 ～ 1e-26），沒有模型能比；無雜訊的 Jaynes–Cummings 也是它較好。
-    有雜訊時 QKAN-FWP-O 在阻尼振盪上是它的 1.2 倍，在 two tones、Jaynes–Cummings、Duffing 上比它低（1.97e-3 對 2.51e-3、
-    2.87e-3 對 4.05e-3、8.67e-4 對 9.34e-4）——學到的先驗與特徵比現場選階數的 ridge 更有效率。
-  - 在非線性的 Hénon map 上兩條線性參考線都失效（約 5e-2），QKAN-FWP-O 是 3.4e-5（無雜訊）與 1.8e-3（有雜訊）。
-- **同一個記憶配上古典特徵，結果相同。** tanh 特徵的對照組和 QKAN-FWP-O 在 10 格的幾何平均是 1.0 倍，每一格都在 seed 的標準差
-  之內或附近；cos 特徵的對照組在 Hénon 上略好（0.69 倍與 0.87 倍）、在無雜訊的 two tones 與阻尼振盪上較差（有 seed 沒有收斂好），
-  整體 1.6 倍。所以：非線性系統需要**某種**非線性特徵（只留線性項會失敗，見下），但 Bloch 向量並沒有比一般的古典特徵更好的歸納偏置。
-  起作用的是閉迴路的記憶，不是量子電路。對 QKAN-FWP 這條線，這個結果的意義是：如果要用 QKAN 做 fast-weight programmer，
-  fast weights 應該放在讀出為線性的量測算符空間，而不是旋轉角；它不是「量子特徵比較好」的證據。
+  - 「在視窗內擬合 ridge AR」在無雜訊的線性族上是精確解（到 targets 的捨入誤差），沒有模型能比；無雜訊的 Jaynes–Cummings
+    也是它較好。有雜訊時 QKAN-FWP-O 在阻尼振盪上是它的 1.2 倍，在 two tones、Jaynes–Cummings、Duffing 上比它低。
+  - 「在視窗內擬合二次特徵」在**無雜訊的 Hénon map 上是精確解（1.5e-16），QKAN-FWP-O 是 3.4e-5**——只要特徵的函數形式對了，
+    一個六個係數的最小平方就解掉這個任務。有雜訊時 QKAN-FWP-O 較低（1.8e-3 對 2.6e-3）；在其他族上這條參考線很差
+    （two tones 1.2e-2），因為函數形式不對。
+  所以 QKAN-FWP-O 的定位是「不需要事先知道函數形式、在各種系統上都接近最好」，而不是在任何一個族上勝過知道函數形式的最小平方。
 
-消融（test MSE ÷ 完整模型）：
+### 6.2 同一個記憶，換掉特徵
+
+把 Bloch 特徵換成別的特徵，**先驗、gate 與求解完全相同**（`qkanfwp/obsmem.py` 的 `classical` 選項）。最後一欄是對 QKAN-FWP-O 的
+幾何平均倍數（小於 1 表示比較好）。
+
+<<feat_fam>>
+
+- **Bloch 特徵就是一次諧波的 Fourier 特徵。** 用同樣 6 個 hidden unit 的 $\cos u, \sin u$（同一個函數空間，112 參數）是 1.2 倍，
+  用 8 個 unit（特徵數相同，148 參數）是 1.1 倍，都在 seed 的雜訊之內。
+- **tanh 特徵相同（1.0 倍）；可訓練頻率的 cos 特徵 1.6 倍**（差在無雜訊的阻尼振盪與 two tones）。
+- **二次多項式整體較差（1.7 倍），但在函數形式吻合時最好**：無雜訊的 Hénon 是 3.9e-6（比 Bloch 好 9 倍）、阻尼振盪好 18 倍；
+  two tones、Jaynes–Cummings、Duffing 則差 15–50 倍，有雜訊的 Hénon 也較差（2.4e-3 對 1.8e-3）。
+- **小型 MLP 特徵整體最好（0.47 倍，即好 2.1 倍）**：無雜訊的線性族與 Duffing 上好 3–12 倍，Hénon 相同，有雜訊的格子都相同。
+- **只留線性項**在 Hénon 上失敗（4e-2）、Duffing 差 2.4 倍；在三個線性的族上反而更好（無雜訊時好 18–80 倍）。
+
+結論：收益來自閉迴路的記憶。非線性系統需要某種非線性特徵，但 Bloch 特徵並不特別——它和同函數空間的 Fourier 特徵等價，
+不如一個同樣大小的小型 MLP。這個架構裡的量子電路不是效能的來源。
+
+### 6.3 同樣的特徵，換掉記憶規則
+
+<<mem_fam>>
+
+- **沒有記憶**：參數量相當（9 個電路，154 參數）的靜態模型差 23 倍，和 103 參數的靜態模型（24 倍）一樣。
+  差距不是參數量造成的。
+- **指數加權 RLS**（先驗只當初始值，$C_t = gC_{t-1} + (1-g)k_tk_t^\top$）是 0.71 倍，略好於每次寫入都重新注入先驗的做法
+  （無雜訊的 Jaynes–Cummings 好 6 倍）。重新注入先驗的用處是保證 $C_T$ 正定（它在 NARMA10 上是必要的，見 5.4 節）；
+  在這些系統族上它沒有好處，而 RLS 還能用 Sherman–Morrison 做 $O(F^2)$ 的遞迴更新。
+- **不用 gate**（等權重）：沒有雜訊時相當，有雜訊時差 2.3–3.5 倍。Gate 讓模型調整證據相對於先驗的總權重（$\sum_t\beta_t < 1$）。
+- **Delta rule**：掃一次差 7.4 倍，掃四次差 4.6 倍。差距集中在沒有雜訊的線性族（掃一次差 21–1100 倍，掃四次差 10–270 倍）；
+  無雜訊的 Hénon 與 Duffing 差 3–4 倍；有雜訊時和最小平方相當（two tones 差 1.3–1.8 倍，有雜訊的 Hénon 上掃四次的 delta rule 反而最低）。
+  這只是本報告實作的 normalised delta rule 的結果，不代表所有誤差驅動的遞迴方法。
+
+float32 取代 float64 在系統族上沒有差別：
 
 <<om_ablation_fam>>
-
-- **拿掉 fast weights**：無雜訊時差 5 倍到 2.6 萬倍，有雜訊時差 1.4–3.8 倍。
-- **Delta rule 取代最小平方求解**：無雜訊時差 4–1100 倍；有雜訊時幾乎沒有差別（0.93–1.8 倍）。封閉形式求解的價值在高精度的情形；
-  當誤差由雜訊主導時，一次通過的誤差驅動更新就夠了——重點是寫入要看誤差。
-- **不用 gate**：無雜訊時反而略好（線性族 0.4–0.7 倍），有雜訊時差 2.4–3.5 倍。Gate 在這裡的作用是調整證據相對於先驗的總權重
-  （$\sum_t\beta_t < 1$）以及各個 token 的權重；沒有 gate 時只剩先驗精度 $\Lambda_0$ 可以調節。
-- **只留線性項（拿掉所有非線性特徵）**：線性族上無雜訊時反而好 20–80 倍（純線性特徵可以精確表示 AR 遞迴）、有雜訊時相同；
-  **Hénon 上差 1164 倍（無雜訊）與 22 倍（有雜訊），Duffing 無雜訊時差 2.4 倍**。非線性特徵是讓非線性系統能在 context 內被辨識的部分；
-  在線性系統上它不需要，還會稍微降低精度。
-- **Bloch 特徵換成古典的 tanh／cos 特徵**：見上，沒有差別。
-- **float32**：和 float64 沒有差別（1.0 倍）。
 
 ---
 
 '''
 
-RESULTS_SHOTS = r'''## 7. 有限量測次數與數值精度
+RESULTS_SHOTS = r'''## 7. 上量子硬體：有限量測次數、數值精度與硬體誤差
 
 QKAN-FWP-O 要解一個由量測值組成的線性方程 $C_T R = b_T$，量測雜訊與捨入誤差都可能被 $C_T^{-1}$ 放大——
-這是把它搬上真機前最該先問的問題。
+這是把它搬上真機前最該先問的問題（7.1、7.2 節）。另一方面，fast weights 是量測算符這件事，在硬體上有兩個角度空間的模型沒有的性質：
+query 的量測基底可以由 context 決定（7.3 節），以及 context 與 query 共同的硬體誤差會被最小平方吸收（7.4 節）。
+這一節全部是模擬，沒有真機實驗。
 
 ### 7.1 Shot 預算的算法
 
@@ -657,6 +741,74 @@ $C_T \succeq \Lambda_0$，所以條件數不超過 $(\lambda_{\max}(\Lambda_0) +
   但預測需要的是殘差被擬合的程度，而線性求解對殘差是穩定的；加上模型預測的是增量 $x_{T+1}-x_T$，1e-12 的 MSE（RMS 誤差 $10^{-6}$）
   並不需要雙精度。論文 benchmark 全部 24 格的 float32 結果在 5.4 節的消融表（整體 1.2 倍；Bessel、SHM 與 JC 不變），系統族上是 1.0 倍（第 6 節）。
 
+### 7.3 由 context 決定 query 的量測基底
+
+讀出 $k_T\cdot R_T$ 對記憶是線性的，而 $R_T$ 在量 query 之前就已經由 context 算出來。對電路 $i$，$R_T$ 裡屬於它的三個 Bloch 係數
+$\mathbf R_i$ 定義了一個量測算符 $\mathbf R_i\cdot\boldsymbol\sigma = |\mathbf R_i|\,(\hat{\mathbf r}_i\cdot\boldsymbol\sigma)$。
+所以 query 的電路不必量 X、Y、Z 三個基底再組合：在量測前加一個由 $R_T$ 決定的單 qubit 旋轉，把量測軸轉到 $\hat{\mathbf r}_i$，
+一個設定就直接估計 $\hat{\mathbf r}_i\cdot\mathbf n_i$，$S$ 次量測全部用在這個設定上（`query_readout='axis'`）。
+換句話說，**fast weights 在硬體上的實現就是 query 電路的量測基底**——記憶寫入的是「下一次要量什麼」。
+Context 的電路仍然要量三個基底（統計量 $k_tk_t^\top$ 需要完整的 Bloch vector）；古典的常數項與線性項沒有量測雜訊。
+
+Query 讀出造成的 shot 變異數有封閉形式，而且在量 query 之前就能算出來（`ObservableMemoryFWP.query_shot_variance`）：
+
+$$\mathrm{Var}_{\text{axis}} = \frac{s_y^2}{S}\sum_i |\mathbf R_i|^2\,(1-\cos_i^2),\quad \cos_i = \hat{\mathbf r}_i\cdot\mathbf n_i;\qquad
+\mathrm{Var}_{XYZ} = \frac{s_y^2}{\lfloor S/3\rfloor}\sum_i\sum_{a\in\{x,y,z\}} R_{ia}^2\,(1-n_{ia}^2).$$
+
+下表把 shot 雜訊的來源分開（`experiments/shot_noise.py --decompose`）：同一個訓練好的模型，只對 query 的電路抽樣、只對 context 的電路抽樣，
+或全部抽樣；query 用三個基底或用 context 決定的量測軸。
+
+<<shot_decomp>>
+
+<<shot_closed>>
+
+SHOT_AXIS_DISCUSSION
+
+### 7.4 靜態的硬體誤差：context 內的校正
+
+真機上除了統計雜訊還有系統性的誤差：讀出誤差、去極化、閘的校正誤差。它們在一段時間內大致固定，但會隨校正狀態漂移，
+訓練時（模擬器，或某一天的硬體）並不知道。這裡測試的情境是：**所有模型都用理想電路訓練，測試時在每一個電路打開同一個靜態誤差，
+不重新訓練、不做 error mitigation**（`experiments/device_noise.py`；期望值是精確的，沒有 shot 雜訊；baseline 用物理的 ⟨Z⟩ 讀出）：
+
+- 讀出誤差 $e$：$P(\text{讀成 }1\mid 0) = e$、$P(\text{讀成 }0\mid 1) = 2e$，每個量到的期望值 $v$ 變成 $(1-3e)\,v + e$；
+- 去極化 $p$：$v \to (1-p)\,v$；
+- 過旋轉 $\varepsilon$：每個旋轉閘（可訓練的與編碼輸入的）實際轉了 $(1+\varepsilon)$ 倍的角度。
+
+**為什麼預期 QKAN-FWP-O 受的影響小。** 任何固定的單 qubit 雜訊通道對 Bloch vector 的作用都是仿射的；reps = 1 時輸入只經過一次編碼閘，
+所以即使雜訊夾在閘與閘之間，帶誤差的特徵仍是 $\{1,\cos u,\sin u\}$ 的線性組合，可以寫成 $k' = Ak$（$A$ 固定，偏移由常數特徵吸收）。
+Context 的配對與 query 是在**同一台裝置**上量的，所以最小平方解跟著變成 $R' = A^{-\top}R$，預測 $k'\cdot R' = k\cdot R$ 不變。
+配對數多於特徵數、先驗趨近於零時這嚴格成立（`tests/test_obsmem.py` 有這個測試）；實際的模型配對數（N = 16 時 9 個）少於特徵數（25 個），
+先驗有作用，所以只是近似。過旋轉不是特徵的仿射變換（它改變 $\cos$、$\sin$ 的頻率），但同樣同時作用在 context 與 query 上。
+角度空間的模型沒有對應的機制：慢參數是對理想電路訓練的，讀出的權重固定。
+
+![device errors](figures/om_device.png)
+
+五個任務的幾何平均（帶誤差的 test MSE ÷ 理想裝置的 test MSE）：
+
+<<device_factor>>
+
+<<device>>
+
+- **QKAN-FWP-O 幾乎不受影響**：1% 的讀出誤差、去極化或過旋轉下 MSE 不變（1.0 倍），5% 時是 1.1–1.6 倍；
+  Bessel 在 5% 的讀出誤差下仍是 4.5e-12。把記憶換成 RLS 的版本行為相同。
+- **HQKAN-Δ 與 QKAN-FWP+ 在 1% 的讀出誤差下差 20 倍與 13 倍，5% 時差約 290 倍與 190 倍**；去極化與過旋轉 5% 時差 11–21 倍。
+  在 Bessel、NARMA10 與 DQC 上，0.5% 的讀出誤差就讓它們的 MSE 上升 7–300 倍。
+- **這個穩健性有兩個來源，要分開看。**
+  1. *古典的線性項。* 同樣的特徵但沒有記憶的版本（表中的「without memory」）在 1% 時也幾乎不變，5% 的讀出誤差下差 3–5 倍：
+     預測的主要部分由 base-activation 的線性項承擔，它是古典計算的，沒有硬體誤差。HQKAN-Δ 與 QKAN-FWP+ 的輸出則全部經過電路。
+  2. *記憶的校正。* 下表把同一個誤差只放在 query 的電路、或只放在 context 的電路（等於誤差在視窗內改變了）。
+     1% 的讀出誤差下，Bessel 從 1.6e-12 變成 1.3e-7（8 萬倍），Hénon 從 3.4e-5 變成 1.7e-3（50 倍），DQC 差 22 倍。
+     也就是說 Bloch 特徵在讀出中的權重並不小；誤差之所以不影響預測，是因為它同時出現在 context 與 query，被最小平方吸收。
+     NARMA10 與有雜訊的阻尼振盪幾乎不靠 Bloch 特徵，所以沒有差別。
+
+<<device_scope>>
+
+- **適用範圍。** (i) 誤差必須在一個視窗（N 步的電路執行）之內不變；如果在視窗內漂移，就是上表「只放在 query」的情形，
+  此時 QKAN-FWP-O 並不比沒有記憶的版本好。(ii) 只測了三種簡單的誤差模型，沒有 crosstalk、與時間相關的雜訊或真機實驗，
+  也沒有和 shot 雜訊同時模擬。(iii) Baseline 沒有做任何補救：讀出誤差可以用標準的 readout mitigation 校正，
+  輸出的偏移也可以用少量有標籤的資料重新校正，但這些需要額外的校正電路或資料；QKAN-FWP-O 是每個視窗自動完成。
+  (iv) 用古典特徵的對照組（第 6 節）不需要量子硬體，沒有這個問題；這一節比較的是同樣要在量子硬體上執行的模型。
+
 ---
 
 '''
@@ -666,56 +818,51 @@ RESULTS_SOLAR = r'''## 8. 結果：太陽黑子週期預測
 528 個月 → 132 個月的 direct multi-step 預測，論文的協定（peak-aware loss、100 epochs、batch 32、取 validation loss
 最低的 checkpoint、lr 由 validation 從論文的 grid 選）。指標：scaled MSE、峰值振幅誤差 PAE（黑子數）、峰值時間誤差 PTE（月）。
 
-### 8.1 所有模型、三種 split
+### 8.1 切分方式：對 window 的索引切分會讓 targets 重疊
 
-除了論文的 80/10/10，另外用兩種 chronological split 檢查結論是否依賴評估期間。
+論文的敘述是對 sliding window 做 chronological 80/10/10 切分。每個 window 的 target 長 132 個月，所以相鄰 split 的 targets
+重疊 131 個月：validation 最後的 targets 落在第一個 test 預測的歷史截止點之後，用 validation loss 選 checkpoint 等於偷看了
+當時還沒發生的資料；training 最後的 targets 也落在 validation 期間內。三種切分比例都有這個問題：
 
-<<solar_all>>
+| 切分 | 方式 | Training targets 結束 | Validation targets | 第一個 test 預測的歷史截止點 | Test targets |
+|---|---|---|---|---|---|
+| 80/10/10 | window 索引（論文） | 1981/09 | 1970/11 – 2003/11 | 1992/12 | 1993/01 – 2026/02 |
+| 80/10/10 | 依 target 時間 | 1970/10 | 1970/11 – 1992/12 | 1992/12 | 1993/01 – 2026/02 |
+| 60/20/20 | window 索引 | 1937/03 | 1926/05 – 1981/09 | 1970/10 | 1970/11 – 2026/02 |
+| 60/20/20 | 依 target 時間 | 1926/04 | 1926/05 – 1970/10 | 1970/10 | 1970/11 – 2026/02 |
+| 70/15/15 | window 索引 | 1959/06 | 1948/08 – 1992/10 | 1981/11 | 1981/12 – 2026/02 |
+| 70/15/15 | 依 target 時間 | 1948/07 | 1948/08 – 1981/11 | 1981/11 | 1981/12 – 2026/02 |
 
-- **論文的 split**：QKAN-FWP+（11,732 參數）與 QKAN-FWP-O（約 500 參數）的 MSE 與 PAE 都明顯低於重新實作的 baseline，
-  也低於論文印出的數字。
-- **換 split 之後**，QKAN-FWP+ 的 MSE 優勢不穩定（60/20/20 上比 baseline 高 5%，70/15/15 上低 7%）。
-  QKAN-FWP-O 的靜態版本在三種 split 上的 test MSE 都比 baseline 低 19–25%（0.0144／0.0137／0.0126 對 0.0177／0.0175／0.0168），
-  也低於「重複上一個週期」的參考線；它的 validation loss 在三種 split 上同樣低於 baseline，seed 間的標準差很小。
-- **峰值指標沒有模型穩定贏過零參數的參考線**：PTE 在三種 split 上都是參考線最好或接近最好；PAE 只有在論文的 split 上有模型略好。
-- **零參數的「重複上一個週期」本身就優於論文印出的模型**（0.0156 / 35.9 / 16.2 對 0.0168 / 39.59 / 21.89）。
+「依 target 時間」的做法（`run_solar.py --purge`）是把 training 與 validation 各自最後 131 個 window 拿掉，
+使每個 split 的 targets 都結束在下一個 split 第一個預測起點之前；test windows 不變，所以兩種切法的 test 指標可以直接對照。
+**下面以依 target 時間切分的結果為準**；論文切法的結果只用來和論文印出的數字對照。
 
-### 8.2 QKAN-FWP-O：記憶在這裡有沒有用
+### 8.2 依 target 時間切分的結果
 
-沒有證據顯示有用。在論文的 split 上，validation loss 選的是沒有記憶的靜態版本（2.37 對 2.61），test MSE 卻是有記憶的版本較低
-（0.0134 對 0.0144）；60/20/20 上 validation 略偏向有記憶的版本、test 打平；70/15/15 上兩者都是靜態版本較好。
-設定掃描（`results/dev_solar_om.jsonl`）裡所有帶記憶的變體 validation loss 都比靜態版本高。
-所以這個資料集上的收益來自精簡的參數化——年平均 token、16 個 cosine mode 的輸出、last-cycle anchor、
-量測算符可訓練的 6 個電路——而不是來自記憶：約 500 個參數（論文模型的 4%）就得到更低的 MSE。
+<<solar_purged>>
 
-### 8.3 QKAN-FWP+ 的兩個部分
+SOLAR_PURGED_DISCUSSION
 
-論文的 split、lr 2.5e-3：
+### 8.3 論文的切法（window 索引）
+
+<<solar_index>>
+
+SOLAR_INDEX_DISCUSSION
+
+QKAN-FWP+ 的兩個部分（論文的切法、lr 2.5e-3）：
 
 <<solar_parts>>
 
 ![solar forecast](figures/solar_forecast.png)
 
-分組 gate 降 MSE（0.0139，PAE／PTE 只小幅改善），last-cycle 讀出改善峰值指標（PAE 34.2、PTE 19.6，但 MSE 沒變），
-兩者合起來三個指標都好。論文的做法是從 {1, 2, 2.5}×1e-3 中用 validation loss 選 lr：
-
-<<solar_grid>>
-
-但 validation 與 test 的排序相反：上表的 Val. loss 欄，QKAN-FWP+ 是 3.3–3.8，baseline 是 2.5。Validation 期間
-（目標 1971–2004，含 SC21–23 等強週期）QKAN-FWP+ 明顯較差，test 期間（1993–2026，含偏弱的 SC24）則明顯較好；
-被選中的 checkpoint 多半在前幾個 epoch，表示訓練主要是在微調「重複上一個週期」這個起點。
+分組 gate 降 MSE（0.0139，PAE／PTE 只小幅改善），last-cycle 讀出改善峰值指標（PAE 34.2、PTE 19.6，但 MSE 沒變）。
 
 ![error by start](figures/solar_error_by_start.png)
 ![error by start, 60/20/20](figures/solar_error_by_start_split622.png)
 
 ### 8.4 判斷
 
-- 這個 benchmark 的 test 只涵蓋兩到五個太陽週期，不同期間的排序會翻轉，而且零參數的 seasonal-naive 就在同一個水準。
-  它**不足以**證明哪個模型的預測能力真的比較好——這個保留同樣適用於論文 Table 7 中各模型之間 10–30% 的差距。
-- 在這個前提下，三種 split、validation 與 test 都一致的只有：QKAN-FWP-O 的靜態版本以約 500 個參數得到比 12,423 參數的
-  baseline 更低的 MSE。峰值指標與記憶機制的效果都沒有穩定的結論。
-- 若要把太陽黑子的結果寫進論文，建議至少：加入 seasonal-naive 當 baseline、用多個 rolling-origin split 取平均、
-  並同時報 validation 期間的指標。
+SOLAR_JUDGEMENT
 
 ---
 
