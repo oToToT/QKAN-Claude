@@ -278,7 +278,7 @@ def timeseries_part(out):
         rows_ = [(v + "@cos30", lab) for v, lab in controls if any(k[2] == v + "@cos30" for k in c)]
         if len(rows_) < 2:
             return
-        out.extend([f"## {title} on the paper benchmarks (test MSE, geometric mean over the four windows; last column: factor to the first row over the cells both have)\n",
+        out.extend([f"## {title} on the paper benchmarks (test MSE, geometric mean over the four windows; last column: factor to the first row over the 20 cells of the five 300-point series)\n",
                     "| Variant | Params | " + " | ".join(TITLES[d] for d in DATASETS) + " | vs first row |",
                     "|---|---|" + "---|" * (len(DATASETS) + 1)])
         ref_v = rows_[0][0]
@@ -287,7 +287,8 @@ def timeseries_part(out):
             for d in DATASETS:
                 g_ = [fl(m(c, d, w, v)) for w in WINDOWS if (d, w, v) in c]
                 vals.append(f"{gmean(g_):.1e}" if len(g_) == len(WINDOWS) else "–")
-            common = [(fl(m(c, d, w, v)), fl(m(c, d, w, ref_v))) for d, w in cells_ if (d, w, v) in c and (d, w, ref_v) in c]
+            common = [(fl(m(c, d, w, v)), fl(m(c, d, w, ref_v))) for d, w in cells_
+                      if d != "jc" and (d, w, v) in c and (d, w, ref_v) in c]
             r = gmean([a_ / b_ for a_, b_ in common])
             out.append(f"| {lab} | {params[v]} | " + " | ".join(vals) + f" | {'–' if v == ref_v else big(r) + '×'} |")
         out.append("")

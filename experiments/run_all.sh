@@ -162,8 +162,7 @@ python experiments/run_timeseries.py --protocol dev --datasets $SMALL --windows 
     --variants cmg@cos10 cmg@cos30 cmg@cos100 cmg_plus@cos10 cmg_plus@cos30 cmg_plus@cos100 --out results/dev_cmg.jsonl
 python experiments/run_timeseries.py --protocol dev --datasets jc --windows 16 --seeds 100 \
     --variants cmg@cos10 cmg@cos30 cmg_plus@cos10 cmg_plus@cos30 --out results/dev_cmg.jsonl
-python experiments/run_timeseries.py --datasets $SMALL --variants cmg cmg@cos10 cmg@cos30 cmg_plus@cos10 cmg_plus@cos30 \
-    --out results/final_cmg.jsonl
+python experiments/run_timeseries.py --datasets $SMALL --variants cmg cmg@cos30 cmg_plus@cos30 --out results/final_cmg.jsonl
 python experiments/run_timeseries.py --datasets jc --variants cmg@cos10 cmg_plus@cos10 cmg_plus@cos30 --out results/final_cmg.jsonl
 # robustness of QKAN-FWP-O: train-only normalisation, NARMA without the start-up transient
 python experiments/run_timeseries.py --windows 16 --norm train --variants $OM@cos30 --out results/robust_norm.jsonl
